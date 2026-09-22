@@ -223,11 +223,19 @@ df_all_agro = df_meta_allrounds.merge(df_raw_agro_allrounds, left_index=True, ri
 
 #for 2025-023-474 there are lines in both labformulier and NGAC data (though empty), resulting in a row in df_all_agro with text iso a date: 
 df_all_agro.loc[df_all_agro['Date'] == 'Geen bloem beschikbaar'] = np.nan # make this text NaN to avoid errors later
-    #df_all_agro['Date'].apply(lambda x: x if isinstance(x,datetime) else np.nan) #no filling of the nan, as that is risky   .fillna(method = "ffill")
-
-#in 2026 duplo measurements are available (two values for one code): use only the first one
-df_all_agro = df_all_agro[~df_all_agro['sample name'].str.contains('duplo', case=False, na=False)
-                          ] #line suggestion Co-pilot: remove lines with duplo in 'sample name'
+   
+#In 2026 duplicate measurements are available: normalize the sample name and average their results.
+df_all_agro['sample name'] = (
+    df_all_agro['sample name']
+    .str.replace(r'\s*duplo\s*', '', case=False, regex=True)
+    .str.strip()
+)
+numeric_result_columns = df_raw_agro_allrounds.columns.tolist()
+metadata_columns = [column for column in df_all_agro.columns if column not in numeric_result_columns]
+df_all_agro = (
+    df_all_agro.groupby(metadata_columns, dropna=False, as_index=False)[numeric_result_columns]
+    .mean()
+)
 
 df_water_agro = df_all_agro.loc[df_all_agro['matrix'] == 'Water',:]
 print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which water: {np.size(df_water_agro,0)}')
@@ -763,4 +771,3 @@ for rnd in  Rounds_soil_sampled:
             fabfunctions.plot_heat_map(df5x4_1comp_insoil_plot, outdir_plot_soil, f"Soil_mass_{comp}_heat map_in_r{rnd}.png",\
                                         color_map='Purples', vmax=30000, title_heat= f"Mass {comp} in soil for round {rnd} ({unit_plant_NGAC[:2]})",\
                                               )#ylab ='', vmax=1000, annotation=None
-           
