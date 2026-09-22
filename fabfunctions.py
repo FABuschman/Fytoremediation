@@ -12,7 +12,7 @@ def makedir(path):
     return path
 
 
-def make_data_table(file, sheets:list, cols:list) ->pd.DataFrame:
+def make_data_table(file, sheets:list, cols:list, return_units=False) ->pd.DataFrame:
     """read and transpose excel sheets en merge them in one table;
        NB: first column in list is index column"""
 
@@ -23,10 +23,11 @@ def make_data_table(file, sheets:list, cols:list) ->pd.DataFrame:
         dfs.append(df)
 
     tot_df = pd.concat(dfs)
-    print(f"make_data_table: Units are not passed on to the dataframe. The units in the data are: {tot_df.EenheidCode.unique()} ") #print the units, as they are passed to the pivot table
-
     df_data = tot_df.pivot(columns = cols[1], values = cols[2])
+    df_units = tot_df.pivot(columns=cols[1], values=cols[3])
 
+    if return_units:
+        return df_data, df_units
     return df_data
 
 

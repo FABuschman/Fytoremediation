@@ -195,18 +195,21 @@ cols_data_agro = ['Monster::MonstercodeKlant','Parameter','TextWaarde','EenheidC
 # for raw data from NGAC (for some samples 3 numbers), see folder: Data\PFAS data\Agro control\__rawdata)
 xls_2025 = pd.ExcelFile(os.path.join(indir, fin_2025))
 sheets_agro_2025= [s for s in xls_2025.sheet_names if ("PFAS NGAC" in s) and ("ICP" not in s)]
-df_raw_agro = fabfunctions.make_data_table(os.path.join(indir, fin_2025),\
-                                           sheets_agro_2025,cols_data_agro)  # convert all lines to a structured data table
+df_raw_agro, df_units_agro = fabfunctions.make_data_table(
+    os.path.join(indir, fin_2025), sheets_agro_2025, cols_data_agro, return_units=True
+)  # convert all lines to structured data tables
 
 #2026 (note that NGAC re-analyzed the first set of water samples of 2025: the correct ones are included in the lab form)
 # for raw data from NGAC (for some samples 3 numbers), see folder: Data\PFAS data\Agro control\__rawdata)
 xls_2026 = pd.ExcelFile(os.path.join(indir, fin_2026))
 sheets_agro_2026= [s for s in xls_2026.sheet_names if ("NGAC LCMS" in s) and ("ICP" not in s)]
-df_raw_agro2 = fabfunctions.make_data_table(os.path.join(indir, fin_2026),\
-                                           sheets_agro_2026,cols_data_agro)  # convert all lines to a structured data table
+df_raw_agro2, df_units_agro2 = fabfunctions.make_data_table(
+    os.path.join(indir, fin_2026), sheets_agro_2026, cols_data_agro, return_units=True
+)  # convert all lines to structured data tables
 #df_raw_agro2['Monster::MonstercodeKlant']
 
 df_raw_agro_allrounds= pd.concat([df_raw_agro, df_raw_agro2], ignore_index=False, sort=False)
+df_units_agro_allrounds = pd.concat([df_units_agro, df_units_agro2], ignore_index=False, sort=False)
 
 
 
@@ -220,6 +223,7 @@ for col in df_raw_agro_allrounds.columns:
 
 # inner join by default,i.e. use only monstercodes that appear in both meta and raw dataframe
 df_all_agro = df_meta_allrounds.merge(df_raw_agro_allrounds, left_index=True, right_index=True)
+df_all_agro = df_all_agro.join(df_units_agro_allrounds.add_suffix(' unit'), how='left')
 
 #for 2025-023-474 there are lines in both labformulier and NGAC data (though empty), resulting in a row in df_all_agro with text iso a date: 
 df_all_agro.loc[df_all_agro['Date'] == 'Geen bloem beschikbaar'] = np.nan # make this text NaN to avoid errors later
@@ -247,6 +251,12 @@ print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which plant: {n
 #in 2025 lab formulier "Bodem" consistently used, whereas in 2026 "Soil" is used (all English)
 df_soil_agro = df_all_agro.loc[(df_all_agro['matrix'] == 'Bodem') | (df_all_agro['matrix'] == 'Soil'), :]  
 print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which soil: {np.size(df_soil_agro,0)}')
+
+def get_ngac_unit(dataframe, parameter):
+    units = dataframe[f'{parameter} unit'].dropna().unique()
+    if len(units) != 1:
+        raise ValueError(f'Expected one unit for {parameter}, found: {units}')
+    return units[0]
 
 
 #to check combining the data
@@ -311,15 +321,16 @@ fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
 #analyse for these PFAS compounds
 compounds_select = ['PFBA', 'PFHxA', 'PFHpA', 'PFOA', 'PFBS', 'PFOS', 'PFHpS', 'PFHxS',
                     'PFPeA', 'PFPeS', 'PFHpS', '4:2 FTS', '6:2 FTS'] #this row added 20 April 2026 (6:2 FTS on 20 May)
-unit_water_NGAC = '\u03BCg/l'  #NGAC unit for water [normally mu/l]
 
 for comp in compounds_select:
     if comp in mapping_agro['naam'].keys():
+        fullname = mapping_agro['naam'][comp]
+        unit_water_NGAC = get_ngac_unit(df_water_agro, fullname)
                
         # pivot table 
         df_pivot =df_water_agro.pivot(index=['Date'],
                        columns=['soil type'],  #was 
-                       values=mapping_agro['naam'][comp]).replace("n.a.", np.nan) #use mapping file to get full name PFAS as in NGAC
+                       values=fullname).replace("n.a.", np.nan) #use mapping file to get full name PFAS as in NGAC
         
         print(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
     
@@ -386,8 +397,6 @@ df_plant_agro.loc[['2026-004-022','2026-004-023','2026-004-024'],'subcompartment
 df_plant_agro.loc[['2026-004-025','2026-004-026','2026-004-027'],'subcompartment']='b'
 df_plant_agro.loc[['2026-004-028','2026-004-029','2026-004-030'],'subcompartment']='c'
 ###df_plant_agro['subcompartment'] = df_plant_agro['subcompartment'].str.replace('A t/m D,','a') 
-
-unit_plant_NGAC = '\u03BCg/kg'  #NGAC unit for plant (they do not dry samples); for soil the unit is [ug/kg dw], which is not used in this script
 
 alignunits_g_to_kg=1/1000 #divide by 1000
 
@@ -482,8 +491,9 @@ for specie in species:
         # barplot PFAS mass in plant  +  heat map to show variation over subcompartments
         ### 
         for comp in compounds_select:
-             if comp in mapping_agro['naam'].keys():
+            if comp in mapping_agro['naam'].keys():
                 fullname = mapping_agro['naam'][comp]
+                unit_plant_NGAC = get_ngac_unit(df_plant_agro, fullname)
 
                 #add column with mass of component in plant per sample (multiply the dry weight and concentration [ug/ kg dw])
                 df_plant_1specie_1round[f"mass {comp}"]= \
@@ -734,6 +744,7 @@ for rnd in  Rounds_soil_sampled:
     for comp in compounds_select:
         if comp in mapping_agro['naam'].keys():
             fullname = mapping_agro['naam'][comp]
+            unit_soil_NGAC = get_ngac_unit(df_soil_agro, fullname)
 
             #add column with mass of component in soil per sample (multiply the dry weight and concentration [ug/ kg dw])
             df_soil_1round[f"mass {comp}"]= \
@@ -769,5 +780,5 @@ for rnd in  Rounds_soil_sampled:
 
             # Create and save the figure 
             fabfunctions.plot_heat_map(df5x4_1comp_insoil_plot, outdir_plot_soil, f"Soil_mass_{comp}_heat map_in_r{rnd}.png",\
-                                        color_map='Purples', vmax=30000, title_heat= f"Mass {comp} in soil for round {rnd} ({unit_plant_NGAC[:2]})",\
+                                        color_map='Purples', vmax=30000, title_heat= f"Mass {comp} in soil for round {rnd} ({unit_soil_NGAC[:2]})",\
                                               )#ylab ='', vmax=1000, annotation=None
