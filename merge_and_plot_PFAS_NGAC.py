@@ -91,12 +91,17 @@ Lookup_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
                          sheet_name ='Watervolume',usecols=["water level (cm)", "Volume (l)"], skiprows=3,index_col=0) #the lookup table water level --> volume since round 4
 
 # Perform interpolation
-vol_interpolated_since_r4= wl_from_r4
-vol_interpolated_since_r4.values = np.interp(
-    wl_from_r4.to_numpy(),
-    Lookup_from_r4.index.to_numpy(),
-    Lookup_from_r4['Volume (l)'].to_numpy(),
+#= wl_from_r4
+vol_interpolated_since_r4 = pd.DataFrame(
+    np.interp(
+        wl_from_r4.to_numpy(),
+        Lookup_from_r4.index.to_numpy(),
+        Lookup_from_r4['Volume (l)'].to_numpy(),
+    ),
+    index=wl_from_r4.index,
+    columns=["Sand", "Zeolite", "Biochar", "Iron-Zeolite", "Sand+salt"],
 )
+
 
 print(vol_interpolated_since_r4)
 
@@ -222,7 +227,7 @@ df_all_agro.loc[df_all_agro['Date'] == 'Geen bloem beschikbaar'] = np.nan # make
 
 #in 2026 duplo measurements are available (two values for one code): use only the first one
 df_all_agro = df_all_agro[~df_all_agro['sample name'].str.contains('duplo', case=False, na=False)
-                          ] #with help of Co-plilot #with help of Co-plilot: remove lines with duplo in 'sample name'
+                          ] #line suggestion Co-pilot: remove lines with duplo in 'sample name'
 
 df_water_agro = df_all_agro.loc[df_all_agro['matrix'] == 'Water',:]
 print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which water: {np.size(df_water_agro,0)}')
