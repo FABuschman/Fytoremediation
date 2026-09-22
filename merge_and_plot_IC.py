@@ -35,7 +35,7 @@ outdir_plot = fabfunctions.makedir(os.path.join(outdir, f"plots/_kas/{today}/IC"
 
 # list files
 fin_2025 = "2025-023 EMK PFAS Kas proeven.xlsm" #2025
-fin_2026 = "2026-004 EMK kas proeven.xlsm" #the last samples of round 3 taken in 2026
+fin_2026 = "2026-004 Fyto-PFAS kas Delft proeven.xlsm" #the last samples of round 3 taken in 2026
 
 # limit of detection: dictionary with the nutrients as key (also used for selecting which nutrients to plot) 
 lod = { 
@@ -159,11 +159,13 @@ dfin_all= pd.concat([dfin25, dfin26], ignore_index=False, sort=False) #all conce
 #make one dataframe to be durther analyzed
 df = df_meta_all.merge(dfin_all, how = 'inner', on='monstercode') 
 
+duplicates = df[df.duplicated(subset=["monstercode"], keep=False)] #removing duplo data (can be done more elegant)
+print(duplicates)
 
 #%% Process
 #=============================================================================
 
-vol_tank_full=325 # the volume of water (l) per compartment when tank is full 
+vol_tank_full=266 # the volume of water (l) per compartment when tank is full 
 vol_water_wetsoil=50 #the volume of water in wet (terrestrial) soil, see box A (Zwart, 2025)
 
 #change order soil types to order in greenhouse
