@@ -221,24 +221,29 @@ for col in df_raw_agro_allrounds.columns:
 #%% combine data
 #=============================================================================
 
-# inner join by default,i.e. use only monstercodes that appear in both meta and raw dataframe
-df_all_agro = df_meta_allrounds.merge(df_raw_agro_allrounds, left_index=True, right_index=True)
-df_all_agro = df_all_agro.join(df_units_agro_allrounds.add_suffix(' unit'), how='left')
+# Keep only lab codes present in both the metadata and NGAC result tables.
+df_all_agro = df_meta_allrounds.join(df_raw_agro_allrounds, how='inner', validate='one_to_one')
+df_all_agro = df_all_agro.join(
+    df_units_agro_allrounds.add_suffix(' unit'), how='left', validate='one_to_one'
+)
 
 #for 2025-023-474 there are lines in both labformulier and NGAC data (though empty), resulting in a row in df_all_agro with text iso a date: 
 df_all_agro.loc[df_all_agro['Date'] == 'Geen bloem beschikbaar'] = np.nan # make this text NaN to avoid errors later
-   
-#In 2026 duplicate measurements are available: normalize the sample name and average their results.
-df_all_agro['sample name'] = (
-    df_all_agro['sample name']
-    .str.replace(r'\s*duplo\s*', '', case=False, regex=True)
-    .str.strip()
-)
-numeric_result_columns = df_raw_agro_allrounds.columns.tolist()
-metadata_columns = [column for column in df_all_agro.columns if column not in numeric_result_columns]
+    #df_all_agro['Date'].apply(lambda x: x if isinstance(x,datetime) else np.nan) #no filling of the nan, as that is risky   .fillna(method = "ffill")
+
+# In 2026, average original and duplo measurements into one sample record.
+df_all_agro['labcode'] = df_all_agro.index
+df_all_agro['is duplo'] = df_all_agro['sample name'].str.contains('duplo', case=False, na=False)
+df_all_agro['sample name'] = df_all_agro['sample name'].str.replace(
+    r'\s*duplo\s*', '', case=False, regex=True
+).str.strip()
+result_columns = df_raw_agro_allrounds.columns
+group_columns = df_all_agro.columns.difference(result_columns.union(['labcode', 'is duplo']), sort=False).tolist()
 df_all_agro = (
-    df_all_agro.groupby(metadata_columns, dropna=False, as_index=False)[numeric_result_columns]
-    .mean()
+    df_all_agro.sort_values('is duplo')
+    .groupby(group_columns, dropna=False, as_index=False)
+    .agg({**{column: 'mean' for column in result_columns}, 'labcode': 'first'})
+    .set_index('labcode')
 )
 
 df_water_agro = df_all_agro.loc[df_all_agro['matrix'] == 'Water',:]
@@ -254,8 +259,8 @@ print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which soil: {np
 
 def get_ngac_unit(dataframe, parameter):
     units = dataframe[f'{parameter} unit'].dropna().unique()
-    if len(units) != 1:
-        raise ValueError(f'Expected one unit for {parameter}, found: {units}')
+    if len(units) == 0:
+        raise ValueError(f'No unit found for {parameter}')
     return units[0]
 
 
@@ -275,7 +280,7 @@ vol_water_wetsoil=50 #the volume of water in wet (terrestrial) soil, see box A (
 vol_reconstr['date_float'] = [da.timestamp() for da in vol_reconstr.index] #add column with numeric date (float) for interpolation;   .index.to_list()
 vol_reconstr.set_index('date_float',inplace=True) #modify dataframe forever (not creating a new one; for debugging still to be possible I only use it when I change the index)
 
-dates_sampling= df_water_agro['Date'].unique()  #get the dates of sampling (later to be checked that pivot table has same dates)
+dates_sampling= df_water_agro.loc[:,"Date"].unique()  #now with loc (later to be checked that pivot table has same dates)
 df_vol = pd.DataFrame({'date':dates_sampling})
 df_vol.set_index('date', inplace=True)
 
@@ -327,10 +332,10 @@ for comp in compounds_select:
         fullname = mapping_agro['naam'][comp]
         unit_water_NGAC = get_ngac_unit(df_water_agro, fullname)
                
-        # pivot table 
-        df_pivot =df_water_agro.pivot(index=['Date'],
-                       columns=['soil type'],  #was 
-                       values=fullname).replace("n.a.", np.nan) #use mapping file to get full name PFAS as in NGAC
+        # Average repeated measurements for the same sampling date and soil type.
+        df_pivot = df_water_agro.pivot_table(
+            index='Date', columns='soil type', values=fullname, aggfunc='mean'
+        )
         
         print(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
     

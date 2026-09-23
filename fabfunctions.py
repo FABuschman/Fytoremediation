@@ -12,19 +12,20 @@ def makedir(path):
     return path
 
 
-def make_data_table(file, sheets:list, cols:list, return_units=False) ->pd.DataFrame:
-    """read and transpose excel sheets en merge them in one table;
-       NB: first column in list is index column"""
+def make_data_table(file, sheets: list, cols: list, return_units=False) -> pd.DataFrame:
+    """Read NGAC sheets into wide result and unit tables indexed by lab code."""
+    raw_data = pd.concat(
+        [pd.read_excel(file, usecols=cols, sheet_name=sheet) for sheet in sheets],
+        ignore_index=True,
+    )
+    index_column, parameter_column, value_column, unit_column = cols
 
-    dfs = []
-    
-    for s in sheets:
-        df = pd.read_excel(file, usecols=cols, sheet_name=s, index_col=cols[0]) 
-        dfs.append(df)
-
-    tot_df = pd.concat(dfs)
-    df_data = tot_df.pivot(columns = cols[1], values = cols[2])
-    df_units = tot_df.pivot(columns=cols[1], values=cols[3])
+    df_data = raw_data.pivot_table(
+        index=index_column, columns=parameter_column, values=value_column, aggfunc='first'
+    )
+    df_units = raw_data.pivot_table(
+        index=index_column, columns=parameter_column, values=unit_column, aggfunc='first'
+    )
 
     if return_units:
         return df_data, df_units
