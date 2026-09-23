@@ -46,7 +46,7 @@ dates_round_plants= pd.DataFrame({"start":[datetime.strptime('28-Mar-2025', "%d-
                                            datetime.strptime('11-Sep-2025', "%d-%b-%Y"), datetime.strptime('01-May-2026', "%d-%b-%Y"),
                                            datetime.strptime('14-Jul-2026', "%d-%b-%Y")], \
                                   "end": [datetime.strptime('16-May-2025', "%d-%b-%Y"), datetime.strptime('14-Aug-2025', "%d-%b-%Y"),\
-                                         datetime.strptime('21-jan-2026', "%d-%b-%Y"), datetime.strptime('14-Jul-2026', "%d-%b-%Y"),
+                                         datetime.strptime('21-jan-2026', "%d-%b-%Y"), datetime.strptime('15-Jul-2026', "%d-%b-%Y"),
                                          datetime.strptime('30-Oct-2026', "%d-%b-%Y")]} ) #NB 30oct is estimated for round 5
 
 dates_round_plants.insert(2,"roundnr", list(range(1,dates_round_plants.end.size+1) ) ) #add round number
@@ -61,11 +61,12 @@ datesfilltanks=  [datetime.strptime('03-Jul-2025', "%d-%b-%Y"),
                  datetime.strptime('28-Jul-2025', "%d-%b-%Y"),
                  datetime.strptime('11-Aug-2025', "%d-%b-%Y"),
                  datetime.strptime('2-Sep-2025', "%d-%b-%Y"),
-                 datetime.strptime('21-jan-2026', "%d-%b-%Y"),
-                 datetime.strptime('4-may-2026', "%d-%b-%Y"),
-                 datetime.strptime('27-jul-2026', "%d-%b-%Y")   ]
+                 datetime.strptime('21-Jan-2026', "%d-%b-%Y"),
+                 datetime.strptime('04-May-2026', "%d-%b-%Y"),
+                 datetime.strptime('27-Jul-2026', "%d-%b-%Y"),
+                 datetime.strptime('18-Aug-2026', "%d-%b-%Y")]
 
-print(f"Water was added to tanks on {len(datesfilltanks)} moments, starting {datesfilltanks[0]}")
+print(f"Water was added (a bit on top or reservoir fully filled up) on {len(datesfilltanks)} moments, starting {datesfilltanks[0]}")
 
 #the order of the soil compartments in the Delft greenhouse (used for plots)
 soiltypes_goodorder = ["Sand", "Zeolite", "Activated Carbon","Bentonite", "Magnetite",
@@ -85,7 +86,7 @@ vol_reconstr = pd.read_excel(os.path.join(indir, fin_2025),
                          sheet_name="Watervolume",
                          usecols=["Date", "Sand", "Zeolite", "Activated Carbon","Bentonite", "Magnetite"], skiprows=6, index_col=0)
 wl_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
-                         sheet_name ='Watervolume',usecols=["Date", "comp1", "comp2", "comp3", "comp4", "comp5"], skiprows=3,index_col=0) #for round 3 last part
+                         sheet_name ='Watervolume',usecols=["Date", "Sand", "Zeolite", "Biochar","Iron-Zeolite", "Sand+salt"], skiprows=3,index_col=0) #for round 3 last part
 # Known volume at water level (see labform Watervolume)
 Lookup_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
                          sheet_name ='Watervolume',usecols=["water level (cm)", "Volume (l)"], skiprows=3,index_col=0) #the lookup table water level --> volume since round 4
@@ -99,7 +100,7 @@ vol_interpolated_since_r4 = pd.DataFrame(
         Lookup_from_r4['Volume (l)'].to_numpy(),
     ),
     index=wl_from_r4.index,
-    columns=["Sand", "Zeolite", "Biochar", "Iron-Zeolite", "Sand+salt"],
+    columns=["Sand", "Zeolite", "Biochar", "Iron-Zeolite", "Sand+salt"], #is this copy of adsorbants needed?
 )
 
 
@@ -126,7 +127,7 @@ pfas_ini= pfas_ini.rename(index={3: 'date_added'})
 
 #% import meta data 
 cols_meta = ['labcode', 'matrix','soil type','biota','plant tissue',
-             'compartment','subcompartment','sample name','Date'] #'sample name' can go out
+             'compartment','subcompartment','sample name','Date'] #'sample name' is used to find duplos
 
 df_meta = pd.read_excel(os.path.join(indir, fin_2025),\
                         sheet_name ='labcodes',usecols=cols_meta, skiprows=1,index_col='labcode') #for round 1 to first part 3
@@ -273,7 +274,7 @@ def get_ngac_unit(dataframe, parameter):
 #=============================================================================
 
 #%Estimate volume of water per compartment, which can be multiplied by pivot dataframe (concentration) to yield mass
-vol_tank_full=325 # the volume of water (l) per compartment when tank is full 
+#vol_tank_full=266 # the volume of water (l) per compartment when tank is full 
 vol_water_wetsoil=50 #the volume of water in wet (terrestrial) soil, see box A (Zwart, 2025)
 
 #% Interpolate the reconstructed watervolume per compartment on sampling dates 
