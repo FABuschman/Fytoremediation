@@ -69,8 +69,8 @@ datesfilltanks=  [datetime.strptime('03-Jul-2025', "%d-%b-%Y"),
 print(f"Water was added (a bit on top or reservoir fully filled up) on {len(datesfilltanks)} moments, starting {datesfilltanks[0]}")
 
 #the order of the soil compartments in the Delft greenhouse (used for plots)
-soiltypes_goodorder = ["Sand", "Zeolite", "Activated Carbon","Bentonite", "Magnetite",
-                       "Biochar", "No adsorbant", "Sand+salt","Iron-zeolite"] #add the three new ones ("No adsorbant" means "Sand" in compartment 4)
+soiltypes_goodorder = ["Sand", "Sand+salt","Bentonite", "Magnetite", "Zeolite","Iron-Zeolite", "Activated Carbon",
+                       "Biochar"] # all adsorbants; "No adsorbant" is used for comp4 when tqaht was empty: leaving that out, results in plots without these results
 
 #settings for plots
 plt.style.use('default')
@@ -81,8 +81,8 @@ plt.rcParams.update({'figure.max_open_warning': 0}) #suppresses (erroneous) warn
 #%% Import
 #=============================================================================
 
-# import reconstructed water volume with Date as the index column 
-vol_reconstr = pd.read_excel(os.path.join(indir, fin_2025),    
+# import reconstructed water volume rounds 1-4 with Date as the index column 
+vol_reconstr_r1_3 = pd.read_excel(os.path.join(indir, fin_2025),    
                          sheet_name="Watervolume",
                          usecols=["Date", "Sand", "Zeolite", "Activated Carbon","Bentonite", "Magnetite"], skiprows=6, index_col=0)
 wl_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
@@ -91,8 +91,7 @@ wl_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
 Lookup_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
                          sheet_name ='Watervolume',usecols=["water level (cm)", "Volume (l)"], skiprows=3,index_col=0) #the lookup table water level --> volume since round 4
 
-# Perform interpolation
-#= wl_from_r4
+# Perform interpolation since round 4
 vol_interpolated_since_r4 = pd.DataFrame(
     np.interp(
         wl_from_r4.to_numpy(),
@@ -100,16 +99,10 @@ vol_interpolated_since_r4 = pd.DataFrame(
         Lookup_from_r4['Volume (l)'].to_numpy(),
     ),
     index=wl_from_r4.index,
-    columns=["Sand", "Zeolite", "Biochar", "Iron-Zeolite", "Sand+salt"], #is this copy of adsorbants needed?
+    columns=wl_from_r4.columns
 )
 
-
-print(vol_interpolated_since_r4)
-
-df_vol_allrounds = pd.concat([vol_reconstr, vol_interpolated_since_r4], ignore_index=False, sort=False) 
-
-
-
+df_vol_allrounds = pd.concat([vol_reconstr_r1_3, vol_interpolated_since_r4], axis=0, sort=False) 
 
 
 #Total PFAS mass added (microg) to each water storage reservoir 
@@ -230,23 +223,11 @@ df_all_agro = df_all_agro.join(
 
 #for 2025-023-474 there are lines in both labformulier and NGAC data (though empty), resulting in a row in df_all_agro with text iso a date: 
 df_all_agro.loc[df_all_agro['Date'] == 'Geen bloem beschikbaar'] = np.nan # make this text NaN to avoid errors later
-    #df_all_agro['Date'].apply(lambda x: x if isinstance(x,datetime) else np.nan) #no filling of the nan, as that is risky   .fillna(method = "ffill")
 
-# In 2026, average original and duplo measurements into one sample record.
-df_all_agro['labcode'] = df_all_agro.index
-df_all_agro['is duplo'] = df_all_agro['sample name'].str.contains('duplo', case=False, na=False)
-df_all_agro['sample name'] = df_all_agro['sample name'].str.replace(
-    r'\s*duplo\s*', '', case=False, regex=True
-).str.strip()
-result_columns = df_raw_agro_allrounds.columns
-group_columns = df_all_agro.columns.difference(result_columns.union(['labcode', 'is duplo']), sort=False).tolist()
-df_all_agro = (
-    df_all_agro.sort_values('is duplo')
-    .groupby(group_columns, dropna=False, as_index=False)
-    .agg({**{column: 'mean' for column in result_columns}, 'labcode': 'first'})
-    .set_index('labcode')
-)
+# Remove duplicate measurements while preserving the original row order.
+df_all_agro = df_all_agro[~df_all_agro['sample name'].str.contains('duplo', case=False, na=False)].copy()
 
+#df_water_agro = df_all_agro[df_all_agro['matrix'].eq('Water')].copy()
 df_water_agro = df_all_agro.loc[df_all_agro['matrix'] == 'Water',:]
 print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which water: {np.size(df_water_agro,0)}')
 
@@ -277,9 +258,14 @@ def get_ngac_unit(dataframe, parameter):
 #vol_tank_full=266 # the volume of water (l) per compartment when tank is full 
 vol_water_wetsoil=50 #the volume of water in wet (terrestrial) soil, see box A (Zwart, 2025)
 
+#Add water volume in soil and plant for all times but the first (rough estimate, assuming it is always wetted)
+df_vol_onsampling= df_vol_allrounds.copy() #copy the dataframe and numbers   
+for index, j in enumerate(df_vol_onsampling):
+    df_vol_onsampling[j][1:len(df_vol_onsampling[j])]=df_vol_onsampling[j][1:len(df_vol_onsampling[j])]+vol_water_wetsoil
+
 #% Interpolate the reconstructed watervolume per compartment on sampling dates 
-vol_reconstr['date_float'] = [da.timestamp() for da in vol_reconstr.index] #add column with numeric date (float) for interpolation;   .index.to_list()
-vol_reconstr.set_index('date_float',inplace=True) #modify dataframe forever (not creating a new one; for debugging still to be possible I only use it when I change the index)
+df_vol_allrounds['date_float'] = [da.timestamp() for da in df_vol_allrounds.index] #add column with numeric date (float) for interpolation;   .index.to_list()
+df_vol_allrounds.set_index('date_float',inplace=True) #modify dataframe forever (not creating a new one; for debugging still to be possible I only use it when I change the index)
 
 dates_sampling= df_water_agro.loc[:,"Date"].unique()  #now with loc (later to be checked that pivot table has same dates)
 df_vol = pd.DataFrame({'date':dates_sampling})
@@ -287,19 +273,19 @@ df_vol.set_index('date', inplace=True)
 
 dates_sampling_float= [da.timestamp() for da in dates_sampling] #numeric date (float) needed for interpolation; 
 
-for soil in vol_reconstr.columns:  #INTERPOLATE VOLUME in tank for soil ('type' cannot be used, as it is protected)
+for soil in df_vol_allrounds.columns:  #INTERPOLATE VOLUME in tank for soil ('type' cannot be used, as it is protected)
      df_vol[soil] = np.interp(dates_sampling_float, 
-                                vol_reconstr.index.to_list(), vol_reconstr[soil].values) #soil must be [], and not in between .., since a space occurs in one of the names
+                                df_vol_allrounds.index.to_list(), df_vol_allrounds[soil].values) #soil must be [], and not in between .., since a space occurs in one of the names
 
-#Add water volume in soil and plant for all times but the first (rough estimate, assuming it is always wetted)
-df_vol_wetsoil= df_vol.copy() #copy the dataframe and numbers   
-for index, j in enumerate(df_vol_wetsoil):
-    df_vol_wetsoil[j][1:len(df_vol_wetsoil[j])]=df_vol_wetsoil[j][1:len(df_vol_wetsoil[j])]+vol_water_wetsoil
-
-df_vol_wetsoil_plot=df_vol_wetsoil.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
+df_vol_onsampling_plot=df_vol_onsampling.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
 
 #plot the volume that was reconstructed from marks and logbook
-fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
+fabfunctions.plot_timeseries(df_vol_onsampling_plot, outdir_plot_water,
+                     fname= f"Water volume in tank and soil_interpolated on t(PFAS)", ylab=f"Water volume in tank and soil (l)", 
+                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) 
+
+#plot the volume that was reconstructed from marks and logbook
+fabfunctions.plot_timeseries(df_vol_onsampling_plot, outdir_plot_water,
                      fname= f"Water volume in tank and soil_interpolated on t(PFAS)", ylab=f"Water volume in tank and soil (l)", 
                      dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) 
 
@@ -309,9 +295,9 @@ fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
 
 # # dates_sampling_float= [da.timestamp() for da in dates_sampling] #numeric date (float) needed for interpolation; 
 
-# # for soil in vol_reconstr.columns:  #INTERPOLATE VOLUME for soil ('type' cannot be used, as it is protected)
+# # for soil in df_vol_allrounds.columns:  #INTERPOLATE VOLUME for soil ('type' cannot be used, as it is protected)
 # #     df_vol[soil] = np.interp(dates_sampling_float, 
-# #                                vol_reconstr.index.to_list(), vol_reconstr[soil].values) #soil must be [], and not in between .., since a space occurs in one of the names
+# #                                df_vol_allrounds.index.to_list(), df_vol_allrounds[soil].values) #soil must be [], and not in between .., since a space occurs in one of the names
 
 # # df_vol_plot=df_vol.reindex(soiltypes_goodorder) #Activated carbon is often first, change to order in greenhouse
 
@@ -348,26 +334,20 @@ for comp in compounds_select:
                     fname=figname, ylab=f"Concentration {comp} ({unit_water_NGAC})", 
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
     
-        # #Multiply with volume to arrive at mass
-        # df_mass_plot= pd.DataFrame(df_vol_wetsoil.values*df_pivot_plot.values, columns=df_pivot_plot.columns, index=df_pivot_plot.index) #temporarily made for each soil
+        #Multiply with volume to arrive at mass
+        df_mass_plot= pd.DataFrame(df_vol_onsampling.values*df_pivot_plot.values, columns=df_pivot_plot.columns, index=df_pivot_plot.index) #temporarily made for each soil
 
         #### plot mass  
         ###df_mass_plot=df_mass.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
- 
-
-
- #for now manually delect the mass lines, since the volume is not yet calculated for the last samples...
-   #     figname = f"Water_mass_ {comp.replace(':','_')}"
-        
-        
-   #     if comp in list(pfas_ini.columns): #for the components that were added
-   #         fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water,
-   #                 fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
-   #                 dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks, mass_ini=pfas_ini[comp])
-   #    else:                                   #for the components that were not added
-   #         fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water, 
-   #                 fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
-   #                 dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
+        figname = f"Water_mass_ {comp.replace(':','_')}"
+        if comp in list(pfas_ini.columns): #for the components that were added
+            fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water,
+                    fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
+                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks, mass_ini=pfas_ini[comp])
+        else:                                   #for the components that were not added
+            fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water, 
+                    fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
+                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
     
 
 #check for last compund that dates sampling and in pivot were indeed the same
