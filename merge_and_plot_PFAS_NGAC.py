@@ -38,6 +38,8 @@ outdir_plot_water = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking 
 outdir_plot_plant = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\plant"))  
 outdir_plot_plant_dry_wet = fabfunctions.makedir(os.path.join(rootdir,\
                                                                f"Dataverwerking Python\\plots\\_kas\\{today}\\plant\\Conc_dry_wet"))  #subdir
+outdir_plot_aggregated = fabfunctions.makedir(os.path.join(rootdir,\
+                                                               f"Dataverwerking Python\\plots\\_kas\\{today}\\aggregated"))  #for final plots
 outdir_plot_gado = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\gadolinium"))  #subdir
 outdir_plot_soil = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\soil"))  
 
@@ -51,9 +53,9 @@ fin_pfas_added = "Mass_pure_PFAS_in_Date.csv" #pure PFAS mass added to the water
 # dataframe with the dates of sowing and harvesting; take care: index and roundnr available
 dates_round_plants= pd.DataFrame({"start":[datetime.strptime('28-Mar-2025', "%d-%b-%Y"), datetime.strptime('28-May-2025', "%d-%b-%Y"),\
                                            datetime.strptime('11-Sep-2025', "%d-%b-%Y"), datetime.strptime('01-May-2026', "%d-%b-%Y"),
-                                           datetime.strptime('14-Jul-2026', "%d-%b-%Y")], \
+                                           datetime.strptime('16-Jul-2026', "%d-%b-%Y")], #16 July in stead of 14 july, in orderto see when round 5 starts
                                   "end": [datetime.strptime('16-May-2025', "%d-%b-%Y"), datetime.strptime('14-Aug-2025', "%d-%b-%Y"),\
-                                         datetime.strptime('21-Jan-2026', "%d-%b-%Y"), datetime.strptime('16-Jul-2026', "%d-%b-%Y"),
+                                         datetime.strptime('21-Jan-2026', "%d-%b-%Y"), datetime.strptime('14-Jul-2026', "%d-%b-%Y"),
                                          datetime.strptime('30-Oct-2026', "%d-%b-%Y")]} ) #NB 30oct is estimated for round 5
 
 dates_round_plants.insert(2,"roundnr", list(range(1,dates_round_plants.end.size+1) ) ) #add round number
@@ -343,9 +345,9 @@ for comp in compounds_select:
         fullname = mapping_agro['naam'][comp]
         unit_water_NGAC = get_ngac_unit(df_water_agro, fullname)
                
-        # Average repeated measurements for the same sampling date and soil type.
+        # Create pivot table for this component
         df_pivot = df_water_agro.pivot_table(
-            index='Date', columns='soil type', values=fullname, aggfunc='mean'
+            index='Date', columns='soil type', values=fullname
         )
         
         print(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
@@ -380,8 +382,10 @@ for comp in compounds_select:
     
 
 # Check that the final pivot uses every normalized water-sampling date.
-print('Sampling dates and dates according to pivot are identical:')
-print(df_pivot.index.equals(dates_sampling))
+if df_pivot.index.equals(dates_sampling):
+    print('Sampling dates and dates according to pivot are identical.')
+else:
+    raise ValueError('Sampling dates and dates according to pivot are not identical.')
 
 
 
@@ -405,11 +409,10 @@ bar_colors={tissue_names[0]: "yellow",
 subcomp_names=['a','b','c','d'] #df_plant_agro['subcompartment'].unique()
 df_plant_agro[['biota','subcompartment', 'compartment', 'Date', 'Plant state','plant tissue']][160:180] #some samples have name "A tm D"
 
-#distribute the plants with subcompartment "A tm D" over the first three subcompartments
+#distribute the plants with subcompartment "A tm D" over the first three subcompartments (only for round 3; manually)
 df_plant_agro.loc[['2026-004-022','2026-004-023','2026-004-024'],'subcompartment']='a'
 df_plant_agro.loc[['2026-004-025','2026-004-026','2026-004-027'],'subcompartment']='b'
 df_plant_agro.loc[['2026-004-028','2026-004-029','2026-004-030'],'subcompartment']='c'
-###df_plant_agro['subcompartment'] = df_plant_agro['subcompartment'].str.replace('A t/m D,','a') 
 
 alignunits_g_to_kg=1/1000 #divide by 1000
 
@@ -466,7 +469,7 @@ for specie in species:
         
         ### Create and save stacked bar plot 
         #
-        fabfunctions.plot_bar_stacked(df5x5_tis_soil_plot, outdir_plot_plant, f"Plant_mass_{specie}_r{rnd}.png",\
+        fabfunctions.plot_bar_stacked(df5x5_tis_soil_plot, outdir_plot_plant, f"{specie}_Plant_mass_r{rnd}.png",\
                           color_stacks=bar_colors, ymax=600, ylab =f"Mass {specie} per tissue round {rnd} (g dw)" , )
         
         
@@ -494,7 +497,7 @@ for specie in species:
         df5x4_1comp_subcomp_soil_plot=df5x4_1comp_subcomp_soil_plot.rename(index={'Activated Carbon': 'AC'})
 
         # Create and save the figure 
-        fabfunctions.plot_heat_map(df5x4_1comp_subcomp_soil_plot, outdir_plot_plant, f"Plant_mass_{specie}_heat map_in_r{rnd}.png",\
+        fabfunctions.plot_heat_map(df5x4_1comp_subcomp_soil_plot, outdir_plot_plant, f"{specie}_Plant_mass_heat map_in_r{rnd}.png",\
                                         color_map='YlGn', title_heat= f"Mass {specie} for round {rnd} (g)",\
                                         vmax=250)#ylab ='', annotation=None
         
@@ -649,13 +652,13 @@ for specie in species:
                 
                 ### Create and save stacked bar plot: for whole round and uptake per day
                 #
-                fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot, outdir_plot_plant, f"{specie}_mass_{comp}_in_r{rnd}.png",\
+                fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot, outdir_plot_aggregated, f"{specie}_mass_{comp}_in_r{rnd}.png",\
                                                ylab=f"Mass {comp} in {specie} tissue for round {rnd} ({unit_plant_NGAC[:2]})",\
                                                color_stacks=bar_colors) #no ymax
                 
                 n_days_rnd=pd.Timedelta(dates_round_plants.loc[rnd-1,'duration_rnd']).days #number of days for this round as integer
                 fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot/n_days_rnd,\
-                                               outdir_plot_plant, f"DailyUptake_{specie}_mass_{comp}_in_r{rnd}.png",\
+                                               outdir_plot_aggregated, f"{specie}_DailyUptake_mass_{comp}_in_r{rnd}.png",\
                                                ylab=f"Daily uptake {comp} r{rnd} ({n_days_rnd} d) in {specie} ({unit_plant_NGAC[:2]}/d)",\
                                                color_stacks=bar_colors, ymax=60 ) #ymax from PFBA to compare rounds and components
                 
