@@ -51,7 +51,7 @@ def plot_timeseries(df, path, fname, cmap='tab20',
     
     if mass_ini is not None:
         #for ind in mass_ini: #possibly we get initial values for each round
-        plt.plot(mass_ini.date_added, mass_ini.mass, marker='s',color = 'red', markersize=12)  #this data is Timestamp iso datetime: results in warning
+        plt.plot(mass_ini.date_added, mass_ini.mass, marker='s', linestyle='None', color='red', markersize=12)
         ###mass_ini.plot(ax=ax, color='red', marker='s', markersize=12)  #alos plot in the way df.plot
     
     # add shades and vertical lines

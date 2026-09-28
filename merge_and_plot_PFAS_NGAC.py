@@ -118,39 +118,19 @@ df_vol_allrounds = pd.concat([vol_reconstr_r1_3, vol_interpolated_since_r4], axi
 #Total PFAS mass added (microg) to each water storage reservoir 
 pfas_added = pd.read_csv(fin_pfas_added, sep=';',index_col=0)
 
-df_pfas_added = pd.DataFrame({
-    'compound': pfas_added.columns,
-    'Mass_microg_r1': pd.to_numeric(
-        pfas_added.loc['Mass_mg_r1'], errors='coerce'
-    ),
-    'Mass_microg_r2': pd.to_numeric(
-            pfas_added.loc['Mass_mg_r2'], errors='coerce'
-        ),
-    'date_added_r1': pd.to_datetime(
-            pfas_added.loc['Date_r1'], errors='coerce'
-        ),
-    'date_added_r2': pd.to_datetime(
-        pfas_added.loc['Date_r2'], errors='coerce'
-    ),
-}).dropna(subset=['Mass_microg_r1'])
-
-df_pfas_added['Mass_microg_r1']= df_pfas_added['Mass_microg_r1']*1000/5 #overwrite
-df_pfas_added['Mass_microg_r2']= df_pfas_added['Mass_microg_r2']*1000/5
-#.sort_values('date_added_r1')
-#NOW ONLY MAKE SURE BOTH MASSES ARE PLOTTED, USING SOME PIVOT FUNCTION --2DATES AND 2 MASSES??
-
-
-
-#pfas_added= pfas_added.rename(index={0: 'mass from bottle'})
-#pfas_added= pfas_added.rename(index={1: 'purity_factor'})
-#pfas_added.loc[len(pfas_added)]=pfas_added.loc[len(pfas_added)]*1000/5 #from mg in all 5 compartments to microg / compartment
-#pfas_added= pfas_added.rename(index={2: 'mass'}) #the mass PFAS added
-
-#add a row with dates (should be datetime to be plotted with other datetime data)
-#pfas_added.loc[len(pfas_added)]= [datetime.strptime('28-Mar-2025', "%d-%b-%Y")] *6
-#pfas_added.loc[3]['PFBS']= datetime.strptime('14-Apr-2025', "%d-%b-%Y") #only PFBS was added later
-    #mass_pfas_added.loc[1, len(mass_pfas_added)]= mass_pfas_added.loc[1, len(mass_pfas_added)].date() #trying to convert to datetime again to avoid warning...
-#pfas_added= pfas_added.rename(index={3: 'date_added'})
+df_pfas_added = pd.concat([
+    pd.DataFrame({
+        'compound': pfas_added.columns,
+        'date_added': pd.to_datetime(pfas_added.loc['Date_r1'], errors='coerce'),
+        'mass': pd.to_numeric(pfas_added.loc['Mass_mg_r1'], errors='coerce') * 1000 / 5, # in micrograms per compartment
+    }),
+    pd.DataFrame({
+        'compound': pfas_added.columns,
+        'date_added': pd.to_datetime(pfas_added.loc['Date_r2'], errors='coerce'),
+        'mass': pd.to_numeric(pfas_added.loc['Mass_mg_r2'], errors='coerce') * 1000 / 5, # in micrograms per compartment
+    }),
+], ignore_index=True).dropna(subset=['date_added'])
+df_pfas_added.loc[df_pfas_added['mass'].eq(0), 'mass'] = np.nan
 
 #% import meta data 
 cols_meta = ['labcode', 'matrix','soil type','biota','plant tissue',
@@ -278,6 +258,8 @@ print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which soil: {np
 #pd.set_option('display.max_rows', None)
 #print(df_all_agro[:5])
 
+
+
 #%% Process
 #=============================================================================
 
@@ -353,7 +335,7 @@ fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
 
 #analyse for these PFAS compounds
 compounds_select = ['PFBA', 'PFHxA', 'PFHpA', 'PFOA', 'PFBS', 'PFOS', 'PFHpS', 'PFHxS',
-                    'PFPeA', 'PFPeS', 'PFHpS', '4_2 FTS', '6_2 FTS'] #this row added 20 April 2026 (6:2 FTS on 20 May)
+                    'PFPeA', 'PFPeS', 'PFHpS', '4_2 FTS', '6_2 FTS'] 
 
 df_mass_by_comp = {}
 for comp in compounds_select:
@@ -389,7 +371,8 @@ for comp in compounds_select:
         if comp in list(pfas_added.columns): #for the components that were added
             fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water,
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
-                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks, mass_ini=pfas_added[comp])
+                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
+                    mass_ini=df_pfas_added.loc[df_pfas_added['compound'] == comp])
         else:                                   #for the components that were not added
             fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water, 
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
