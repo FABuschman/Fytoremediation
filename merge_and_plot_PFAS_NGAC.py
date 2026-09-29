@@ -38,8 +38,8 @@ outdir_plot_water = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking 
 outdir_plot_plant = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\plant"))  
 outdir_plot_plant_dry_wet = fabfunctions.makedir(os.path.join(rootdir,\
                                                                f"Dataverwerking Python\\plots\\_kas\\{today}\\plant\\Conc_dry_wet"))  #subdir
-outdir_plot_aggregated = fabfunctions.makedir(os.path.join(rootdir,\
-                                                               f"Dataverwerking Python\\plots\\_kas\\{today}\\aggregated"))  #for final plots
+outdir_plot_combine = fabfunctions.makedir(os.path.join(rootdir,\
+                                                               f"Dataverwerking Python\\plots\\_kas\\{today}\\_combine"))  #for final plots
 outdir_plot_gado = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\gadolinium"))  #subdir
 outdir_plot_soil = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\soil"))  
 
@@ -163,8 +163,19 @@ weight_round3 = pd.read_excel(os.path.join(indir, fin_2026), sheet_name="Plants-
                         usecols=['sample code', 'total wet weight (g) ', 'wet weight for Delta-lab (g)', 'dry weight Delta-lab (g) '], index_col='sample code')   #last two for plant state analysis
 weight_round3=weight_round3.rename(columns={'total wet weight (g) ': 'tot wet weight'})
 
+#ROUND 4
+weight_round4 = pd.read_excel(os.path.join(indir, fin_2026), sheet_name="Plants-round4",
+                        usecols=['sample code', 'total wet weight (g) ', 'wet weight for Delta-lab (g)', 'dry weight Delta-lab (g) '], index_col='sample code')   #last two for plant state analysis
+weight_round4=weight_round4.rename(columns={'total wet weight (g) ': 'tot wet weight'})
+
+#ROUND 5
+##weight_round5 = pd.read_excel(os.path.join(indir, fin_2026), sheet_name="Plants-round5",
+#                        usecols=['sample code', 'total wet weight (g) ', 'wet weight for Delta-lab (g)', 'dry weight Delta-lab (g) '], index_col='sample code')   #last two for plant state analysis
+##weight_round5=weight_round5.rename(columns={'total wet weight (g) ': 'tot wet weight'})
+
+
 #combine weights
-weight_allrounds = pd.concat([weight_round1, weight_round2, weight_round3], ignore_index=False, sort=False) #round 3 to be added from 2026 data
+weight_allrounds = pd.concat([weight_round1, weight_round2, weight_round3, weight_round4], ignore_index=False, sort=False) #round 3 to be added from 2026 data
 
 df_meta_allrounds=df_meta_allrounds.join(weight_allrounds, how='left') #join (not merge) to add a column (NaN when no match)
 
@@ -652,13 +663,13 @@ for specie in species:
                 
                 ### Create and save stacked bar plot: for whole round and uptake per day
                 #
-                fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot, outdir_plot_aggregated, f"{specie}_mass_{comp}_in_r{rnd}.png",\
+                fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot, outdir_plot_plant, f"{specie}_mass_{comp}_in_r{rnd}.png",\
                                                ylab=f"Mass {comp} in {specie} tissue for round {rnd} ({unit_plant_NGAC[:2]})",\
                                                color_stacks=bar_colors) #no ymax
                 
                 n_days_rnd=pd.Timedelta(dates_round_plants.loc[rnd-1,'duration_rnd']).days #number of days for this round as integer
                 fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot/n_days_rnd,\
-                                               outdir_plot_aggregated, f"{specie}_DailyUptake_mass_{comp}_in_r{rnd}.png",\
+                                               outdir_plot_plant, f"{specie}_DailyUptake_mass_{comp}_in_r{rnd}.png",\
                                                ylab=f"Daily uptake {comp} r{rnd} ({n_days_rnd} d) in {specie} ({unit_plant_NGAC[:2]}/d)",\
                                                color_stacks=bar_colors, ymax=60 ) #ymax from PFBA to compare rounds and components
                 
@@ -798,3 +809,6 @@ for rnd in  Rounds_soil_sampled:
             fabfunctions.plot_heat_map(df5x4_1comp_insoil_plot, outdir_plot_soil, f"Soil_mass_{comp}_heat map_in_r{rnd}.png",\
                                         color_map='Purples', vmax=30000, title_heat= f"Mass {comp} in soil for round {rnd} ({unit_soil_NGAC[:2]})",\
                                               )#ylab ='', vmax=1000, annotation=None
+
+#make plot of efficiency
+#outdir_plot_combine

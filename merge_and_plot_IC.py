@@ -231,7 +231,7 @@ for soil in df_vol_wetsoil.columns:
 #plot the volume in tank and soil interpolated on sampling dates 
 df_vol_wetsoil_onsampling_plot=df_vol_wetsoil_onsampling.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
 fabfunctions.plot_timeseries(df_vol_wetsoil_onsampling_plot, outdir_plot,
-                     fname= f"Water volume in tank and soil_interpolated on t(PFAS)", ylab=f"Water volume in tank and soil (l)", 
+                     fname= f"Water volume in tank and soil_interpolated on t(IC)", ylab=f"Water volume in tank and soil (l)", 
                      dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) 
 
 #plot the original volume of water and wetsoil

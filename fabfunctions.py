@@ -111,7 +111,7 @@ def plot_bar_stacked(df_bar, path, fname, color_stacks , xlab='', ylab ='', ymax
     ax = fig.add_subplot(1, 1, 1)
 
     # Create plot
-    df_bar.plot.bar(ax=ax, stacked=True, rot=0, width=width_bar, color=color_stacks,figsize=(6, 5.27)) 
+    df_bar.plot.bar(ax=ax, stacked=True, rot=90, width=width_bar, color=color_stacks,figsize=(6, 5.27)) 
 
     # set y-axis limits
     if ymax == None:
