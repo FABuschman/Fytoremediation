@@ -350,7 +350,7 @@ for comp in compounds_select:
             index='Date', columns='soil type', values=fullname
         )
         
-        print(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
+        #(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
     
         ### plot concentration   #first and second argument need to given, others are matched by defined name
         df_pivot_plot=df_pivot.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
