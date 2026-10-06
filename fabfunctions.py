@@ -12,23 +12,17 @@ def makedir(path):
     return path
 
 
-def make_data_table(file, sheets: list, cols: list, return_units=False) -> pd.DataFrame:
-    """Read NGAC sheets into wide result and unit tables indexed by lab code."""
+def make_data_table(file, sheets: list, cols: list) -> pd.DataFrame:
+    """Read NGAC sheets into wide result tables indexed by lab code."""
     raw_data = pd.concat(
         [pd.read_excel(file, usecols=cols, sheet_name=sheet) for sheet in sheets],
         ignore_index=True,
     )
-    index_column, parameter_column, value_column, unit_column = cols
+    index_column, parameter_column, value_column = cols
 
     df_data = raw_data.pivot_table(
         index=index_column, columns=parameter_column, values=value_column, aggfunc='first'
     )
-    df_units = raw_data.pivot_table(
-        index=index_column, columns=parameter_column, values=unit_column, aggfunc='first'
-    )
-
-    if return_units:
-        return df_data, df_units
     return df_data
 
 
@@ -40,7 +34,7 @@ def plot_timeseries(df, path, fname, cmap='tab20',
     """
     # Validate input DataFrame
     if df.empty:
-        raise ValueError("The provided df is empty")
+        return #no plot is made
     
     # Create figure
     fig = plt.figure(figsize=(11.69, 5.27), constrained_layout=True, dpi=300)#height was 8.27

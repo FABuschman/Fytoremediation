@@ -19,12 +19,6 @@ import fabfunctions
 # functions   ---> in fabfunctions.py
 #=============================================================================
 
-def get_ngac_unit(dataframe, parameter):
-    units = dataframe[f'{parameter} unit'].dropna().unique()
-    if len(units) == 0:
-        raise ValueError(f'No unit found for {parameter}')
-    return units[0] #for now here
-
 
 #%% user settings
 #=============================================================================
@@ -210,27 +204,27 @@ mapping_agro = pd.read_csv(os.path.join(workdir, "mapping.csv"), sep=';',
 
 
 #% import data from Agro Control (NGAC)
-cols_data_agro = ['Monster::MonstercodeKlant','Parameter','TextWaarde','EenheidCode']
+cols_data_agro = ['Monster::MonstercodeKlant','Parameter','TextWaarde']
 
 #2025 (note that NGAC re-analyzed the last set of water samples of 2025: the correct ones are included in the lab form)
 # for raw data from NGAC (for some samples 3 numbers), see folder: Data\PFAS data\Agro control\__rawdata)
 xls_2025 = pd.ExcelFile(os.path.join(indir, fin_2025))
 sheets_agro_2025= [s for s in xls_2025.sheet_names if ("PFAS NGAC" in s) and ("ICP" not in s)]
-df_raw_agro, df_units_agro = fabfunctions.make_data_table(
-    os.path.join(indir, fin_2025), sheets_agro_2025, cols_data_agro, return_units=True
+df_raw_agro = fabfunctions.make_data_table(
+    os.path.join(indir, fin_2025), sheets_agro_2025, cols_data_agro
 )  # convert all lines to structured data tables
 
 #2026 (note that NGAC re-analyzed the first set of water samples of 2025: the correct ones are included in the lab form)
 # for raw data from NGAC (for some samples 3 numbers), see folder: Data\PFAS data\Agro control\__rawdata)
 xls_2026 = pd.ExcelFile(os.path.join(indir, fin_2026))
 sheets_agro_2026= [s for s in xls_2026.sheet_names if ("NGAC LCMS" in s) and ("ICP" not in s)]
-df_raw_agro2, df_units_agro2 = fabfunctions.make_data_table(
-    os.path.join(indir, fin_2026), sheets_agro_2026, cols_data_agro, return_units=True
+
+df_raw_agro2 = fabfunctions.make_data_table(
+    os.path.join(indir, fin_2026), sheets_agro_2026, cols_data_agro
 )  # convert all lines to structured data tables
 #df_raw_agro2['Monster::MonstercodeKlant']
 
 df_raw_agro_allrounds= pd.concat([df_raw_agro, df_raw_agro2], ignore_index=False, sort=False)
-df_units_agro_allrounds = pd.concat([df_units_agro, df_units_agro2], ignore_index=False, sort=False)
 
 
 
@@ -244,12 +238,15 @@ for col in df_raw_agro_allrounds.columns:
 
 # Keep only lab codes present in both the metadata and NGAC result tables.
 df_all_agro = df_meta_allrounds.join(df_raw_agro_allrounds, how='inner', validate='one_to_one')
-df_all_agro = df_all_agro.join(
-    df_units_agro_allrounds.add_suffix(' unit'), how='left', validate='one_to_one'
-)
 
 #for 2025-023-474 there are lines in both labformulier and NGAC data (though empty), resulting in a row in df_all_agro with text iso a date: 
 df_all_agro.loc[df_all_agro['Date'] == 'Geen bloem beschikbaar'] = np.nan # make this text NaN to avoid errors later
+
+#compare duplo with original measurement
+duplo_obs= df_all_agro[df_all_agro['sample name'].str.contains('duplo', case=False, na=False)]
+for i, row in duplo_obs.iterrows():
+    duplo_pair = df_all_agro[df_all_agro['sample name'].str.contains(row['sample name'][:29], case=False, na=False)]
+    print (duplo_pair)
 
 # Remove duplicate measurements while preserving the original row order.
 df_all_agro = df_all_agro[~df_all_agro['sample name'].str.contains('duplo', case=False, na=False)].copy()
@@ -350,12 +347,12 @@ fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
 compounds_select = ['PFBA', 'PFHxA', 'PFHpA', 'PFOA', 'PFBS', 'PFOS', 'PFHpS', 'PFHxS',
                     'PFPeA', 'PFPeS', 'PFHpS', '4_2 FTS', '6_2 FTS'] 
 
+unit_water_NGAC = "\u03bcg/l"
 df_mass_by_comp = {}
 for comp in compounds_select:
     if comp in mapping_agro['naam'].keys():
         fullname = mapping_agro['naam'][comp]
-        unit_water_NGAC = get_ngac_unit(df_water_agro, fullname)
-               
+                       
         # Create pivot table for this component
         df_pivot = df_water_agro.pivot_table(
             index='Date', columns='soil type', values=fullname
@@ -434,6 +431,8 @@ wet_mass_plants_tot= df_plant_agro['tot wet weight']
 df_numeric = wet_mass_plants_tot.apply(pd.to_numeric, errors='coerce')
 df_numeric.sum()
 
+unit_plant_NGAC = "\u03bcg/kg"
+
 for specie in species:
     
     # filter data frame on plant species
@@ -509,7 +508,7 @@ for specie in species:
 
         # Create and save the figure 
         fabfunctions.plot_heat_map(df5x4_1comp_subcomp_soil_plot, outdir_plot_plant, f"{specie}_Plant_mass_heat map_in_r{rnd}.png",\
-                                        color_map='YlGn', title_heat= f"Mass {specie} for round {rnd} (g)",\
+                                        color_map='YlGn', title_heat= f"Mass {specie} r{rnd} (g)",\
                                         vmax=250)#ylab ='', annotation=None
         
         
@@ -520,8 +519,7 @@ for specie in species:
         for comp in compounds_select:
             if comp in mapping_agro['naam'].keys():
                 fullname = mapping_agro['naam'][comp]
-                unit_plant_NGAC = get_ngac_unit(df_plant_agro, fullname)
-
+                
                 #add column with mass of component in plant per sample (multiply the dry weight and concentration [ug/ kg dw])
                 df_plant_1specie_1round[f"mass {comp}"]= \
                     df_plant_1specie_1round.apply(lambda r:
@@ -664,13 +662,13 @@ for specie in species:
                 ### Create and save stacked bar plot: for whole round and uptake per day
                 #
                 fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot, outdir_plot_plant, f"{specie}_mass_{comp}_in_r{rnd}.png",\
-                                               ylab=f"Mass {comp} in {specie} tissue for round {rnd} ({unit_plant_NGAC[:2]})",\
+                                               ylab=f"Mass {comp} in {specie} tissue r{rnd} ({unit_plant_NGAC[:2]})",\
                                                color_stacks=bar_colors) #no ymax
                 
                 n_days_rnd=pd.Timedelta(dates_round_plants.loc[rnd-1,'duration_rnd']).days #number of days for this round as integer
                 fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot/n_days_rnd,\
                                                outdir_plot_plant, f"{specie}_DailyUptake_mass_{comp}_in_r{rnd}.png",\
-                                               ylab=f"Daily uptake {comp} r{rnd} ({n_days_rnd} d) in {specie} ({unit_plant_NGAC[:2]}/d)",\
+                                               ylab=f"Uptake {comp} r{rnd} ({n_days_rnd} d) in {specie} ({unit_plant_NGAC[:2]}/d)",\
                                                color_stacks=bar_colors, ymax=60 ) #ymax from PFBA to compare rounds and components
                 
 
@@ -702,7 +700,7 @@ for specie in species:
                 
                 # Create and save the figure 
                 fabfunctions.plot_heat_map(df5x4_plantmass_subcomp_soil_plot, outdir_plot_plant, f"{specie}_heat map_{comp}_in_r{rnd}.png",\
-                                        color_map='YlOrRd', title_heat= f"Mass {comp} in {specie} for round {rnd} ({unit_plant_NGAC[:2]})",\
+                                        color_map='YlOrRd', title_heat= f"Mass {comp} in {specie} r{rnd} ({unit_plant_NGAC[:2]})",\
                                         vmax=1300)
 
 
@@ -756,6 +754,7 @@ plt.close()
 #=============================================================================                                                         
 ### heat map for PFAS in soil
 # #
+unit_soil_NGAC = "\u03bcg/kg"
 Rounds_soil_sampled=[1,3] 
 for rnd in  Rounds_soil_sampled:
     #find the rows within the period of a round
@@ -771,7 +770,7 @@ for rnd in  Rounds_soil_sampled:
     for comp in compounds_select:
         if comp in mapping_agro['naam'].keys():
             fullname = mapping_agro['naam'][comp]
-            unit_soil_NGAC = get_ngac_unit(df_soil_agro, fullname)
+            
 
             #add column with mass of component in soil per sample (multiply the dry weight and concentration [ug/ kg dw])
             df_soil_1round[f"mass {comp}"]= \
@@ -807,7 +806,7 @@ for rnd in  Rounds_soil_sampled:
 
             # Create and save the figure 
             fabfunctions.plot_heat_map(df5x4_1comp_insoil_plot, outdir_plot_soil, f"Soil_mass_{comp}_heat map_in_r{rnd}.png",\
-                                        color_map='Purples', vmax=30000, title_heat= f"Mass {comp} in soil for round {rnd} ({unit_soil_NGAC[:2]})",\
+                                        color_map='Purples', vmax=30000, title_heat= f"Mass {comp} in soil r{rnd} ({unit_soil_NGAC[:2]})",\
                                               )#ylab ='', vmax=1000, annotation=None
 
 #make plot of efficiency
