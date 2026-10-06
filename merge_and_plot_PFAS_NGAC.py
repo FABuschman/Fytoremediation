@@ -509,7 +509,7 @@ for specie in species:
         # Create and save the figure 
         fabfunctions.plot_heat_map(df5x4_1comp_subcomp_soil_plot, outdir_plot_plant, f"{specie}_Plant_mass_heat map_in_r{rnd}.png",\
                                         color_map='YlGn', title_heat= f"Mass {specie} r{rnd} (g)",\
-                                        vmax=250)#ylab ='', annotation=None
+                                        vmax=None if comp == 'PFBA' else 250)#ylab ='', annotation=None
         
         
         
@@ -701,7 +701,7 @@ for specie in species:
                 # Create and save the figure 
                 fabfunctions.plot_heat_map(df5x4_plantmass_subcomp_soil_plot, outdir_plot_plant, f"{specie}_heat map_{comp}_in_r{rnd}.png",\
                                         color_map='YlOrRd', title_heat= f"Mass {comp} in {specie} r{rnd} ({unit_plant_NGAC[:2]})",\
-                                        vmax=1300)
+                                        vmax=None if comp == 'PFBA' else 1300)
 
 
 #%% Process the ICP-MS data (Gd)
@@ -806,8 +806,8 @@ for rnd in  Rounds_soil_sampled:
 
             # Create and save the figure 
             fabfunctions.plot_heat_map(df5x4_1comp_insoil_plot, outdir_plot_soil, f"Soil_mass_{comp}_heat map_in_r{rnd}.png",\
-                                        color_map='Purples', vmax=30000, title_heat= f"Mass {comp} in soil r{rnd} ({unit_soil_NGAC[:2]})",\
-                                              )#ylab ='', vmax=1000, annotation=None
+                                color_map='Purples', vmax=None if comp == 'PFBA' else 30000, title_heat= f"Mass {comp} in soil r{rnd} ({unit_soil_NGAC[:2]})",\
+                                              )#ylab ='',  annotation=None
 
 #make plot of efficiency
 #outdir_plot_combine
