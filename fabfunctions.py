@@ -88,7 +88,7 @@ def plot_timeseries(df, path, fname, cmap='tab20',
 
 
 
-def plot_bar_stacked(df_bar, path, fname, color_stacks , xlab='', ylab ='', ymax=None, width_bar=None):
+def plot_bar_stacked(df_bar, path, fname, color_stacks , xlab='', ylab ='', ymax=None, width_bar=None, stacked=True):
     """
     Creates a stacked bar plot a bar for each column in 'df_bar' 
     and a slice for each row of 'df_bar'. Legend is plotted for the rows.
@@ -105,7 +105,7 @@ def plot_bar_stacked(df_bar, path, fname, color_stacks , xlab='', ylab ='', ymax
     ax = fig.add_subplot(1, 1, 1)
 
     # Create plot
-    df_bar.plot.bar(ax=ax, stacked=True, rot=90, width=width_bar, color=color_stacks,figsize=(6, 5.27)) 
+    df_bar.plot.bar(ax=ax, stacked=stacked, rot=90, width=width_bar, color=color_stacks,figsize=(6, 5.27)) 
 
     # set y-axis limits
     if ymax == None:

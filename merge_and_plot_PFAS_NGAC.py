@@ -46,11 +46,11 @@ fin_pfas_added = "Mass_pure_PFAS_in_Date.csv" #pure PFAS mass added to the water
 
 # dataframe with the dates of sowing and harvesting; take care: index and roundnr available
 dates_round_plants= pd.DataFrame({"start":[datetime.strptime('28-Mar-2025', "%d-%b-%Y"), datetime.strptime('28-May-2025', "%d-%b-%Y"),\
-                                           datetime.strptime('11-Sep-2025', "%d-%b-%Y"), datetime.strptime('01-May-2026', "%d-%b-%Y"),
-                                           datetime.strptime('16-Jul-2026', "%d-%b-%Y")], #16 July in stead of 14 july, in orderto see when round 5 starts
+                                           datetime.strptime('11-Sep-2025', "%d-%b-%Y"), datetime.strptime('01-May-2026', "%d-%b-%Y") \
+                                           ], #datetime.strptime('16-Jul-2026', "%d-%b-%Y")   16 July in stead of 14 july, in orderto see when round 5 starts
                                   "end": [datetime.strptime('16-May-2025', "%d-%b-%Y"), datetime.strptime('14-Aug-2025', "%d-%b-%Y"),\
-                                         datetime.strptime('21-Jan-2026', "%d-%b-%Y"), datetime.strptime('14-Jul-2026', "%d-%b-%Y"),
-                                         datetime.strptime('30-Oct-2026', "%d-%b-%Y")]} ) #NB 30oct is estimated for round 5
+                                         datetime.strptime('21-Jan-2026', "%d-%b-%Y"), datetime.strptime('14-Jul-2026', "%d-%b-%Y") \
+                                         ]} ) #NB 30oct is estimated for round 5   datetime.strptime('30-Oct-2026', "%d-%b-%Y")
 
 dates_round_plants.insert(2,"roundnr", list(range(1,dates_round_plants.end.size+1) ) ) #add round number
 dates_round_plants.insert(2,"duration_rnd",dates_round_plants.end-dates_round_plants.start) #add the duration 
@@ -75,8 +75,8 @@ datesfilltanks=  [datetime.strptime('03-Jul-2025', "%d-%b-%Y"),
 print(f"Water was added (a bit on top or reservoir fully filled up) on {len(datesfilltanks)} moments, starting {datesfilltanks[0]}")
 
 #the order of the soil compartments in the Delft greenhouse (used for plots)
-soiltypes_goodorder = ["Sand", "Sand+salt","Bentonite", "Magnetite", "Zeolite","Iron-Zeolite", "Activated Carbon",
-                       "Biochar"] # all adsorbants; "No adsorbant" is used for comp4 when the tank was empty: leaving that out, results in plots without these results
+soiltypes_goodorder = ["Sand", "Sand+salt","Bentonite", "Magnetite", "Zeolite", "Activated Carbon",
+                       "Biochar"] # all adsorbants; "Iron-Zeolite",   "No adsorbant" is used for comp4 when the tank was empty: leaving that out, results in plots without these results
 
 #settings for plots
 plt.style.use('default')
@@ -241,6 +241,11 @@ df_all_agro = df_meta_allrounds.join(df_raw_agro_allrounds, how='inner', validat
 
 #for 2025-023-474 there are lines in both labformulier and NGAC data (though empty), resulting in a row in df_all_agro with text iso a date: 
 df_all_agro.loc[df_all_agro['Date'] == 'Geen bloem beschikbaar'] = np.nan # make this text NaN to avoid errors later
+df_all_agro['Date'] = pd.to_datetime(
+    df_all_agro['Date'],
+    errors='coerce',
+    format='mixed',
+) #normalize the metadata in Date to datetime
 
 #compare duplo with original measurement
 duplo_obs= df_all_agro[df_all_agro['sample name'].str.contains('duplo', case=False, na=False)]
@@ -348,7 +353,9 @@ compounds_select = ['PFBA', 'PFHxA', 'PFHpA', 'PFOA', 'PFBS', 'PFOS', 'PFHpS', '
                     'PFPeA', 'PFPeS', 'PFHpS', '4_2 FTS', '6_2 FTS'] 
 
 unit_water_NGAC = "\u03bcg/l"
-df_mass_by_comp = {}
+
+df_waterpfasmass_aggr = {} #for aggregation of water mass by compound
+
 for comp in compounds_select:
     if comp in mapping_agro['naam'].keys():
         fullname = mapping_agro['naam'][comp]
@@ -369,22 +376,20 @@ for comp in compounds_select:
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
     
         # Align dates and soil types explicitly before converting concentrations to mass.
-        df_mass_plot = df_vol_wetsoil_onsampling.reindex(
+        df_waterpfasmass_aggr[comp] = df_vol_wetsoil_onsampling.reindex(
             index=df_pivot_plot.index, columns=df_pivot_plot.columns
         ).mul(df_pivot_plot)
-
-        df_mass_by_comp[comp] = df_mass_plot #saving the mass data for each PFAS component
+        
 
         #### plot mass  
-        ###df_mass_plot=df_mass.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
         figname = f"Water_mass_ {comp.replace(':','_')}"
         if comp in list(pfas_added.columns): #for the components that were added
-            fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water,
+            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water,
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
                     mass_ini=df_pfas_added.loc[df_pfas_added['compound'] == comp])
         else:                                   #for the components that were not added
-            fabfunctions.plot_timeseries(df_mass_plot, outdir_plot_water, 
+            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water, 
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
     
@@ -402,7 +407,7 @@ else:
 #=============================================================================                                                         
 
 #make plots for these plant species, per round, per PFAS component 
-species=['sunflower', 'plantain']
+species=['sunflower']#, 'plantain']
 
 #make end date later, since many plants were sampled after 'end of round 3'
 dates_round_plants_ext=dates_round_plants.copy() #copy the correct dates
@@ -433,6 +438,7 @@ df_numeric.sum()
 
 unit_plant_NGAC = "\u03bcg/kg"
 
+df_plantpfasmass_aggr = {}
 for specie in species:
     
     # filter data frame on plant species
@@ -447,23 +453,20 @@ for specie in species:
         df_plant_1specie_1round={} #clear data from previous round
         df_plant_1specie_1round= df_plant_1specie.loc[mask_1rnd].reset_index() 
 
-        print(f"For round {rnd} dates of harvesting {specie} aggregated in the plots were: ")  
+        print(f"For round {rnd} dates of harvesting {specie} used in the plots were: ")  
         print(df_plant_1specie_1round.Date.unique())
     
         
 
         ### barplot plant mass dry weight plant: sum plant MASSes from multiple samples and over subcompartments
         ### 
-        df_plant_1specie_1round_aggr = \
+        df_plant_1specie_1round_grouped = \
                 df_plant_1specie_1round.groupby(['soil type', 'compartment', 'plant tissue'])['dry weight'].agg('sum').reset_index()
-        
-        #print(f"Aggregated plant mass for {specie} and round {rnd} ") 
-        #print(df_plant_1specie_1round_aggr)
-
+                
         #prepare Dataframe to plot as bar
         outdict_tis_soil = {} #method: make a nested dictionary, and convert that again to get a complete 5x5 DataFrame (reason for method: not always data are available for each plant tissue)
         for tis in tissue_names:
-            df_1tis_temp = df_plant_1specie_1round_aggr[df_plant_1specie_1round_aggr['plant tissue'].str.contains(tis)]
+            df_1tis_temp = df_plant_1specie_1round_grouped[df_plant_1specie_1round_grouped['plant tissue'].str.contains(tis)]
             df_1tis_temp.set_index('soil type',inplace=True)
             inndict = df_1tis_temp['dry weight'].to_dict()
             outdict_tis_soil[tis]=inndict
@@ -486,13 +489,13 @@ for specie in species:
         
         ### Make heat map plant mass [subcompartment, compartment]    
         #
-        df_plant_subcomp_aggr = \
+        df_plant_subcomp_grouped = \
                 df_plant_1specie_1round.groupby(['soil type', 'compartment', 'subcompartment'])['dry weight'].agg('sum').reset_index()
         
         #prepare Dataframe to plot as heat map
         outdict_subcomp_soil = {} #method: make a nested dictionary, and convert that again 
         for subcomp in subcomp_names:
-            df_1subcomp_temp = df_plant_subcomp_aggr[df_plant_subcomp_aggr['subcompartment'].str.contains(subcomp)]
+            df_1subcomp_temp = df_plant_subcomp_grouped[df_plant_subcomp_grouped['subcompartment'].str.contains(subcomp)]
             df_1subcomp_temp.set_index('soil type',inplace=True)
             inndict = df_1subcomp_temp[f"dry weight"].to_dict() #this line is different from plant mass
             outdict_subcomp_soil[subcomp]=inndict
@@ -516,6 +519,7 @@ for specie in species:
         ### Plots of wet vs. dry mass + 
         # barplot PFAS mass in plant  +  heat map to show variation over subcompartments
         ### 
+        df_comp_soil_totals = pd.DataFrame()
         for comp in compounds_select:
             if comp in mapping_agro['naam'].keys():
                 fullname = mapping_agro['naam'][comp]
@@ -635,17 +639,14 @@ for specie in species:
                 
 
                 ### Make bar plot per comp in plant [subcompartment, compartment]    
-                #aggregate mass per compartment: sum all MASSes in compartment per plant tissue
-                df_mass1comp_1sp_1r_aggr = \
+                #sum all MASSes in compartment per plant tissue per compartment
+                df_mass1comp_1sp_1r_grouped = \
                         df_plant_1specie_1round.groupby(['soil type', 'compartment', 'plant tissue'])[f"mass {comp}"].agg('sum').reset_index()
                 
-                #print(f"Mass for {comp} aggregated per compartment for {specie} and round {rnd} ") 
-                #print(df_mass1comp_1sp_1r_aggr)
-
                 #prepare Dataframe to plot as bar
                 outdict_tis_soil = {} #method: make a nested dictionary, and convert that again to get a complete 5x5 DataFrame (reason for method: not always data are available for each plant tissue)
                 for tis in tissue_names:
-                    df_1tis_temp = df_mass1comp_1sp_1r_aggr[df_mass1comp_1sp_1r_aggr['plant tissue'].str.contains(tis)]
+                    df_1tis_temp = df_mass1comp_1sp_1r_grouped[df_mass1comp_1sp_1r_grouped['plant tissue'].str.contains(tis)]
                     df_1tis_temp.set_index('soil type',inplace=True)
                     inndict = df_1tis_temp[f"mass {comp}"].to_dict() #this line is different from plant mass
                     outdict_tis_soil[tis]=inndict
@@ -655,12 +656,20 @@ for specie in species:
                 #change order of soil types (rows)
                 df5x5_1comp_tis_soil_plot=df5x5_1comp_tis_soil.reindex(soiltypes_goodorder) #Activated carbon is often first, change to order in greenhouse
                 
-                #shorten row name
-                df5x5_1comp_tis_soil_plot=df5x5_1comp_tis_soil_plot.rename(index={'Activated Carbon': 'AC'})
-
+                                #Aggregate for plotting all rounds together (not yet plotted the same within loop)
+                df_pfasmassplants_1comp_soil_totals = df5x5_1comp_tis_soil_plot.sum(axis=1).to_frame().T
+                df_pfasmassplants_1comp_soil_totals.index = [rnd]
+                df_pfasmassplants_1comp_soil_totals.index.name = 'roundnr'
+                df_plantpfasmass_aggr[comp] = pd.concat([
+                    df_plantpfasmass_aggr.get(comp, pd.DataFrame()),
+                    df_pfasmassplants_1comp_soil_totals,
+                ])
                 
                 ### Create and save stacked bar plot: for whole round and uptake per day
                 #
+                #shorten name of activated carbon (after creating the aggregated df)
+                df5x5_1comp_tis_soil_plot=df5x5_1comp_tis_soil_plot.rename(index={'Activated Carbon': 'AC'})
+                
                 fabfunctions.plot_bar_stacked(df5x5_1comp_tis_soil_plot, outdir_plot_plant, f"{specie}_mass_{comp}_in_r{rnd}.png",\
                                                ylab=f"Mass {comp} in {specie} tissue r{rnd} ({unit_plant_NGAC[:2]})",\
                                                color_stacks=bar_colors) #no ymax
@@ -675,16 +684,13 @@ for specie in species:
 
                 ### Make heat map comp in plant [subcompartment, compartment]    
                 #aggregate mass per compartment and SUBcompartment: sum all samples including different plant tissue
-                df_mass_subcomp_aggr = \
+                df_mass_subcomp_grouped = \
                         df_plant_1specie_1round.groupby(['soil type', 'compartment', 'subcompartment'])[f"mass {comp}"].agg('sum').reset_index()
                 
-                #print(f"Mass for {comp} aggregated per SUBcompartment for {specie} and round {rnd} ") 
-                #print(df_mass_subcomp_aggr)
-
                 #prepare Dataframe to plot as heat map
                 outdict_subcomp_soil = {} #method: make a nested dictionary, and convert that again 
                 for subcomp in subcomp_names:
-                    df_1subcomp_temp = df_mass_subcomp_aggr[df_mass_subcomp_aggr['subcompartment'].str.contains(subcomp)]
+                    df_1subcomp_temp = df_mass_subcomp_grouped[df_mass_subcomp_grouped['subcompartment'].str.contains(subcomp)]
                     df_1subcomp_temp.set_index('soil type',inplace=True)
                     inndict = df_1subcomp_temp[f"mass {comp}"].to_dict() #this line is different from plant mass
                     outdict_subcomp_soil[subcomp]=inndict
@@ -702,6 +708,23 @@ for specie in species:
                 fabfunctions.plot_heat_map(df5x4_plantmass_subcomp_soil_plot, outdir_plot_plant, f"{specie}_heat map_{comp}_in_r{rnd}.png",\
                                         color_map='YlOrRd', title_heat= f"Mass {comp} in {specie} r{rnd} ({unit_plant_NGAC[:2]})",\
                                         vmax=None if comp == 'PFBA' else 1300)
+
+
+# Plot the aggregated plant mass: four round bars per soil type.
+round_colors = dict(zip(range(1, 5), sns.color_palette('tab10', 4)))
+for comp, df_plantmass_by_round in df_plantpfasmass_aggr.items():
+    df_plantmass_by_round_plot = df_plantmass_by_round.reindex(
+        index=range(1, 5), columns=soiltypes_goodorder
+    ).transpose()
+    fabfunctions.plot_bar_stacked(
+        df_plantmass_by_round_plot,
+        outdir_plot_combine,
+        f"{specie}_mass_{comp}_all_rounds.png",
+        color_stacks=round_colors,
+        xlab='Soil type',
+        ylab=f"Mass {comp} in {specie} ({unit_plant_NGAC[:2]})",
+        stacked=False,
+    )
 
 
 #%% Process the ICP-MS data (Gd)
@@ -785,13 +808,13 @@ for rnd in  Rounds_soil_sampled:
 
             ### Make heat map comp in soil [subcompartment, compartment]    
             #
-            df_soil_subcomp_aggr = \
+            df_soil_subcomp_grouped = \
 							df_soil_1round.groupby(['soil type', 'compartment', 'subcompartment'])[f"mass {comp}"].agg('sum').reset_index()
 						
             #prepare Dataframe to plot as heat map
             outdict_insoil = {} #method: make a nested dictionary, and convert that again 
             for subcomp in subcomp_names:
-                df_1subcomp_temp = df_soil_subcomp_aggr[df_soil_subcomp_aggr['subcompartment'].str.contains(subcomp)]
+                df_1subcomp_temp = df_soil_subcomp_grouped[df_soil_subcomp_grouped['subcompartment'].str.contains(subcomp)]
                 df_1subcomp_temp.set_index('soil type',inplace=True)
                 inndict = df_1subcomp_temp[f"mass {comp}"].to_dict() #this line is different from plant mass
                 outdict_insoil[subcomp]=inndict
@@ -810,4 +833,15 @@ for rnd in  Rounds_soil_sampled:
                                               )#ylab ='',  annotation=None
 
 #make plot of efficiency
-#outdir_plot_combine
+comp= 'PFHxA'
+watermass1comp_at_round_start = df_waterpfasmass_aggr[comp].reindex(
+    dates_round_plants['start'],
+    method='ffill',
+)
+watermass1comp_at_round_start.index = dates_round_plants['roundnr']
+watermass1comp_at_round_start.index.name = 'roundnr'
+
+fabfunctions.plot_bar_stacked(watermass1comp_at_round_start, outdir_plot_combine, f"Mass_water_{comp}_aggr.png",\
+                                               ylab=f"Mass {comp} in water ({unit_water_NGAC[:2]})",\
+                                               color_stacks=bar_colors) #no ymax
+                
