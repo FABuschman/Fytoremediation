@@ -870,7 +870,7 @@ for comp, df_watermass_by_date in df_waterpfasmass_aggr.items():
     fabfunctions.plot_bar_stacked(
             ratio_plant_water_perc,
             outdir_plot_combine,
-            f"Efficiency_Plant_to_water_mass_perc_{comp}_all_rounds.png",
+            f"Efficiency_{specie}_to_water_mass_perc_{comp}_all_rounds.png",
             color_stacks=round_colors,
             xlab='Soil type',
             ylab=f"Uptake efficiency {comp} (%)",
