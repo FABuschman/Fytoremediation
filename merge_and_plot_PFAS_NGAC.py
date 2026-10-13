@@ -27,7 +27,8 @@ today = date.today().strftime("%Y%m%d")
 
 rootdir = r"p:\470-gml-data\Delta-lab\projecten\fytoremediatie EMK\Data" #use raw strings for names with \
 indir = r"p:\470-gml-data\Delta-lab\Intake\labwerk formulier"
-workdir = os.path.join(rootdir, "Dataverwerking Python\\scripts\\_kas") #for mapping files
+#workdir = os.path.join(rootdir, "Dataverwerking Python\\scripts\\_kas") #not needed: mapping Mass_pure_PFAS_added are with scripts in GIT-folder
+
 outdir_plot_water = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\water"))  
 outdir_plot_plant = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\plant"))  
 outdir_plot_plant_dry_wet = fabfunctions.makedir(os.path.join(rootdir,\
@@ -199,8 +200,7 @@ df_meta_allrounds['dry weight'] = df_meta_allrounds.apply(lambda r:(r['tot wet w
 #print(df_meta_allrounds[490:505])
 
 #% import mapping
-mapping_agro = pd.read_csv(os.path.join(workdir, "mapping.csv"), sep=';',
-                      index_col=1).to_dict() #index_col set to 1, as in NGAC data the full name is used, so key=full name
+mapping_agro = pd.read_csv("mapping.csv", sep=';', index_col=1).to_dict() #index_col set to 1, as in NGAC data the full name is used, so key=full name
 
 
 #% import data from Agro Control (NGAC)
@@ -350,7 +350,7 @@ fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
 
 #analyse for these PFAS compounds
 compounds_select = ['PFBA', 'PFHxA', 'PFHpA', 'PFOA', 'PFBS', 'PFOS', 'PFHpS', 'PFHxS',
-                    'PFPeA', 'PFPeS', 'PFHpS', '4_2 FTS', '6_2 FTS'] 
+                    'PFPeA', 'PFPeS', '4_2 FTS', '6_2 FTS'] 
 
 unit_water_NGAC = "\u03bcg/l"
 
@@ -392,13 +392,16 @@ for comp in compounds_select:
             fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water, 
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
-    
 
-# Check that the final pivot uses every normalized water-sampling date.
-if df_pivot.index.equals(dates_sampling):
-    print('Sampling dates and dates according to pivot are identical.')
-else:
-    raise ValueError('Sampling dates and dates according to pivot are not identical.')
+        # Check that the final pivot uses every normalized water-sampling date for PFBA (that was always in water, whereas '6_2 FTS' was not).
+        if comp == 'PFBA':
+            if df_pivot.index.equals(dates_sampling):
+                print('Sampling dates and dates according to pivot are identical.')
+            else:
+                raise ValueError('Sampling dates and dates according to pivot are not identical.')
+
+
+
 
 
 
@@ -832,16 +835,44 @@ for rnd in  Rounds_soil_sampled:
                                 color_map='Purples', vmax=None if comp == 'PFBA' else 30000, title_heat= f"Mass {comp} in soil r{rnd} ({unit_soil_NGAC[:2]})",\
                                               )#ylab ='',  annotation=None
 
-#make plot of efficiency
-comp= 'PFHxA'
-watermass1comp_at_round_start = df_waterpfasmass_aggr[comp].reindex(
-    dates_round_plants['start'],
-    method='ffill',
-)
-watermass1comp_at_round_start.index = dates_round_plants['roundnr']
-watermass1comp_at_round_start.index.name = 'roundnr'
+# Plot interpolated water mass at each round start: four round bars per soil type.
+round_start_dates = pd.DatetimeIndex(dates_round_plants['start'])
+round_colors = dict(zip(dates_round_plants['roundnr'], sns.color_palette('tab10', len(round_start_dates))))
+for comp, df_watermass_by_date in df_waterpfasmass_aggr.items():
+    df_watermass_by_round_plot = (
+        df_watermass_by_date
+        .reindex(df_watermass_by_date.index.union(round_start_dates))
+        .sort_index()
+        .interpolate(method='time')
+        .reindex(round_start_dates)
+    )
+    df_watermass_by_round_plot.index = dates_round_plants['roundnr']
+    df_watermass_by_round_plot = df_watermass_by_round_plot.reindex(
+        columns=soiltypes_goodorder
+    ).transpose()
+    fabfunctions.plot_bar_stacked(
+        df_watermass_by_round_plot,
+        outdir_plot_combine,
+        f"Water_mass_{comp}_all_rounds.png",
+        color_stacks=round_colors,
+        xlab='Soil type',
+        ylab=f"Mass {comp} in water ({unit_water_NGAC[:2]})",
+        stacked=False,
+    )
 
-fabfunctions.plot_bar_stacked(watermass1comp_at_round_start, outdir_plot_combine, f"Mass_water_{comp}_aggr.png",\
-                                               ylab=f"Mass {comp} in water ({unit_water_NGAC[:2]})",\
-                                               color_stacks=bar_colors) #no ymax
-                
+    # Align soil-type rows and round-number columns before calculating efficiency.
+    df_plantmass_by_round_plot = df_plantpfasmass_aggr[comp].transpose().reindex_like(
+        df_watermass_by_round_plot
+    )
+    ratio_plant_water_perc = df_plantmass_by_round_plot.div(
+        df_watermass_by_round_plot
+    ).mul(100)
+    fabfunctions.plot_bar_stacked(
+            ratio_plant_water_perc,
+            outdir_plot_combine,
+            f"Efficiency_Plant_to_water_mass_perc_{comp}_all_rounds.png",
+            color_stacks=round_colors,
+            xlab='Soil type',
+            ylab=f"Uptake efficiency {comp} (%)",
+            stacked=False,
+        )
