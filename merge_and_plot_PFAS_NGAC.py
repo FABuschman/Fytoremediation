@@ -835,18 +835,57 @@ for rnd in  Rounds_soil_sampled:
                                 color_map='Purples', vmax=None if comp == 'PFBA' else 30000, title_heat= f"Mass {comp} in soil r{rnd} ({unit_soil_NGAC[:2]})",\
                                               )#ylab ='',  annotation=None
 
+
 # Plot interpolated water mass at each round start: four round bars per soil type.
-round_start_dates = pd.DatetimeIndex(dates_round_plants['start'])
-round_colors = dict(zip(dates_round_plants['roundnr'], sns.color_palette('tab10', len(round_start_dates))))
-for comp, df_watermass_by_date in df_waterpfasmass_aggr.items():
-    df_watermass_by_round_plot = (
-        df_watermass_by_date
-        .reindex(df_watermass_by_date.index.union(round_start_dates))
-        .sort_index()
-        .interpolate(method='time')
-        .reindex(round_start_dates)
-    )
-    df_watermass_by_round_plot.index = dates_round_plants['roundnr']
+round_colors = dict(zip(dates_round_plants['roundnr'], sns.color_palette('tab10', len(dates_round_plants))))
+for comp in compounds_select:
+    if comp not in df_waterpfasmass_aggr or comp not in df_plantpfasmass_aggr:
+        continue
+
+    df_watermass_by_date = df_waterpfasmass_aggr[comp]
+    df_watermass_by_round = pd.DataFrame()
+    for roundnr in dates_round_plants['roundnr']:
+        round_dates = dates_round_plants.loc[
+            dates_round_plants['roundnr'].eq(roundnr), ['start', 'end']
+        ].iloc[0]
+        water_mass_at_round_start = {}
+
+        for soiltype in soiltypes_goodorder:
+            if soiltype not in df_watermass_by_date.columns:
+                water_mass_at_round_start[soiltype] = np.nan
+                continue
+
+            pfas_mass_comp_rnd_soil_date = df_watermass_by_date[soiltype].dropna()
+            if pfas_mass_comp_rnd_soil_date.empty:
+                water_mass_at_round_start[soiltype] = np.nan
+                continue
+
+            first_measurement_date = pfas_mass_comp_rnd_soil_date.index.min()
+            if first_measurement_date > round_dates['start']:
+                water_mass_at_round_start[soiltype] = (
+                    pfas_mass_comp_rnd_soil_date.iloc[0]
+                    if first_measurement_date <= round_dates['end']
+                    else np.nan
+                )
+                continue
+
+            water_mass_at_start = (
+                pfas_mass_comp_rnd_soil_date
+                .reindex(pfas_mass_comp_rnd_soil_date.index.union(
+                    pd.DatetimeIndex([round_dates['start']])
+                ))
+                .sort_index()
+                .interpolate(method='time')
+                .loc[round_dates['start']]
+            )
+            water_mass_at_round_start[soiltype] = water_mass_at_start
+
+        df_watermass_by_round = pd.concat([
+            df_watermass_by_round,
+            pd.DataFrame(water_mass_at_round_start, index=[roundnr]),
+        ])
+
+    df_watermass_by_round_plot = df_watermass_by_round
     df_watermass_by_round_plot = df_watermass_by_round_plot.reindex(
         columns=soiltypes_goodorder
     ).transpose()
