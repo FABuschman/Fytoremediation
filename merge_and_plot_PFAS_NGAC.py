@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-@author: linde_ae   Frans Buschman
+@author: Frans Buschman, linde_ae
 """
 # packages
 #=============================================================================
@@ -687,11 +687,6 @@ soiltypes_by_year = {
     2025: Soiltypes2025,
     2026: Soiltypes2026,
 }
-##all_soiltypes = list(dict.fromkeys(
-#    soiltype
-#    for soiltypes in soiltypes_by_year.values()
-#    for soiltype in soiltypes
-#))
 
 df_pfas_ini_2025 = pd.concat([
     pd.DataFrame({
@@ -714,32 +709,30 @@ df_pfas_added_r4 = pfas_added_per_comp_r4.rename_axis('compound').rename(
     columns={'Date_added': 'date_added'}
 ).copy()
 df_pfas_added_r4['date_added'] = pd.to_datetime(
-    df_pfas_added_r4['date_added'], errors='coerce'
+    df_pfas_added_r4['date_added'].replace('n.a.', np.nan),
+    errors='coerce',
 )
 df_pfas_added_r4 = df_pfas_added_r4.dropna(subset=['date_added'])
 df_pfas_added_r4[Soiltypes2026] = (
     df_pfas_added_r4[Soiltypes2026]
     .apply(pd.to_numeric, errors='coerce')
     .mul(1000)  # in micrograms per compartment
-    .replace(0, np.nan)
 )
 df_pfas_added_r4 = df_pfas_added_r4[['date_added', *Soiltypes2026]]
 
 
-df_pfas_ini_2025_on_2026 = pd.DataFrame(index=df_pfas_ini_2025.index, columns=Soiltypes2026)
-df_pfas_ini_2025_on_2026[Soiltypes2026] = pd.DataFrame(
-    df_pfas_ini_2025.reindex(Soiltypes2025).to_numpy(),
+df_pfas_ini_2025_on_2026 = pd.DataFrame(
+    df_pfas_ini_2025.reindex(columns=Soiltypes2025).to_numpy(),
     index=df_pfas_ini_2025.index,
     columns=Soiltypes2026,
 )
-df_pfas_ini_2026 = df_pfas_ini_2025_on_2026.add(df_pfas_added_r4[Soiltypes2026].sum(), fill_value=0)
 
+df_pfas_ini_2026 = df_pfas_added_r4.copy() #for new components only added in 2026 this is the initial mass
 
-for comp in compounds_select:
-    #subtract the amount that was taken out of sytem by plants
-    plant_mass_by_round = df_plantpfasmass_aggr[comp]
+for comp2025 in list(df_pfas_ini_2025.index):
     plant_mass_2025 = (
-        plant_mass_by_round.reindex(index=rounds_by_year_aggr[2025])
+        df_plantpfasmass_aggr[comp2025]
+        .reindex(index=rounds_by_year_aggr[2025])
         .sum(axis=0, min_count=1)
     )
     plant_mass_2025_for_2026 = pd.Series(
@@ -747,10 +740,20 @@ for comp in compounds_select:
         index=Soiltypes2026,
     )
 
-    df_pfas_ini_2026[Soiltypes2026] = df_pfas_ini_2026[Soiltypes2026].subtract(
-        plant_mass_2025_for_2026,
-        fill_value=0,
-    )
+    for soiltype2026 in (
+        soiltype for soiltype in Soiltypes2026 if soiltype != 'Biochar'
+    ):
+        mass_2025 = df_pfas_ini_2025_on_2026.loc[comp2025, soiltype2026]
+        mass_added_r4 = df_pfas_added_r4[soiltype2026].get(comp2025, np.nan)
+        initial_mass = pd.Series(
+            [mass_2025, mass_added_r4], dtype=float
+        ).sum(min_count=1)
+        
+        plant_mass = plant_mass_2025_for_2026[soiltype2026]
+        if pd.notna(plant_mass):
+            initial_mass -= plant_mass
+        df_pfas_ini_2026.loc[comp2025, soiltype2026] = initial_mass
+
 
 #analyse the water mass further and aggregate 
 df_waterpfasmass_aggr = {} #for aggregation of water mass by compound for all soils and all rounds
@@ -763,7 +766,6 @@ for comp in compounds_select:
         df_pivot = df_water_agro.pivot_table(
             index='Date', columns='soil type', values=fullname
         )
-        
         #(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
     
         ### plot concentration   #first and second argument need to given, others are matched by defined name
@@ -774,25 +776,43 @@ for comp in compounds_select:
                     fname=figname, ylab=f"Concentration {comp} ({unit_water_NGAC})", 
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
     
-        # Align dates and soil types explicitly before converting concentrations to mass.
+        # Align dates and soil types explicitly and convert concentrations and volume to mass.
         df_waterpfasmass_aggr[comp] = df_vol_wetsoil_onsampling.reindex(
             index=df_pivot_plot.index, columns=df_pivot_plot.columns
         ).mul(df_pivot_plot)
         
 
         #### plot mass  
-        figname = f"Water_mass_ {comp.replace(':','_')}"
-        if comp in list(df_pfas_ini_2026.columns): #for the components that were added
+        figname = f"Water_mass_ {comp}"  #.replace(':','_')
+        
+        #convert initial mass data to a consistent format for plotting water data (both years)
+        mass_ini_frames = []
+        for initial_mass_df, soiltypes in (
+            (df_pfas_ini_2025, Soiltypes2025),
+            (df_pfas_ini_2026, Soiltypes2026),
+        ):
+            if comp in initial_mass_df.index:
+                mass_ini_frames.append(
+                    initial_mass_df.loc[[comp], ['date_added', *soiltypes]]
+                )
+            else:
+                mass_ini_frames.append(
+                    pd.DataFrame(
+                        [[np.nan] * (len(soiltypes) + 1)],
+                        columns=['date_added', *soiltypes],
+                    )
+                )
 
-
-
+        mass_ini = pd.concat(mass_ini_frames, ignore_index=True)
+        mass_ini = mass_ini.fillna(np.nan)
+        mass_ini = mass_ini[['date_added', *soiltypes_goodorder]]
             
-            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water,
-                    fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
-                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
-                    mass_ini=mass_ini)
-        else:                                   #for the components that were not added
-            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water, 
+        fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water,
+                fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
+                dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
+                mass_ini=mass_ini)
+    else:                                   #for the components that were not added
+        fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water, 
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
 

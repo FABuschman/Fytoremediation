@@ -44,9 +44,36 @@ def plot_timeseries(df, path, fname, cmap='tab20',
     df.plot(ax=ax, cmap=cmap, marker=".", markersize=10) #plot the dataframe
     
     if mass_ini is not None:
-        #for ind in mass_ini: #possibly we get initial values for each round
-        plt.plot(mass_ini.date_added, mass_ini.mass, marker='s', linestyle='None', color='red', markersize=12)
-        ###mass_ini.plot(ax=ax, color='red', marker='s', markersize=12)  #alos plot in the way df.plot
+        if 'date_added' in mass_ini.columns:
+            for soiltype in mass_ini.columns.drop('date_added'):
+                if soiltype in df.columns:
+                    water_mass_color = next(
+                        (
+                            line.get_color()
+                            for line in ax.get_lines()
+                            if line.get_label() == soiltype
+                        ),
+                        None,
+                    )
+                    initial_mass = mass_ini[['date_added', soiltype]].dropna()
+                    ax.plot(
+                        initial_mass['date_added'],
+                        initial_mass[soiltype],
+                        marker='s',
+                        linestyle='None',
+                        color=water_mass_color,
+                        markersize=8,
+                        label=f'{soiltype} initial mass',
+                    )
+        elif {'date_added', 'mass'}.issubset(mass_ini.columns):
+            ax.plot(
+                mass_ini.date_added,
+                mass_ini.mass,
+                marker='s',
+                linestyle='None',
+                color='red',
+                markersize=12,
+            )
     
     # add shades and vertical lines
     if dates_round_plants is not None:
