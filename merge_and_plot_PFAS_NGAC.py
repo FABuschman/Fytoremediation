@@ -27,7 +27,7 @@ today = date.today().strftime("%Y%m%d")
 
 rootdir = r"p:\470-gml-data\Delta-lab\projecten\fytoremediatie EMK\Data" #use raw strings for names with \
 indir = r"p:\470-gml-data\Delta-lab\Intake\labwerk formulier"
-#workdir = os.path.join(rootdir, "Dataverwerking Python\\scripts\\_kas") #not needed: mapping Mass_pure_PFAS_added are with scripts in GIT-folder
+#workdir = os.path.join(rootdir, "Dataverwerking Python\\scripts\\_kas") #not needed: mapping Mass_pure_PFAS_r1 are with scripts in GIT-folder
 
 outdir_plot_water = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\water"))  
 outdir_plot_plant = fabfunctions.makedir(os.path.join(rootdir, f"Dataverwerking Python\\plots\\_kas\\{today}\\plant"))  
@@ -43,7 +43,8 @@ fin_2025 = "2025-023 EMK PFAS Kas proeven.xlsm" #2025
 fin_2026 = "2026-004 Fyto-PFAS kas Delft proeven.xlsm" #the last samples of round 3 taken in 2026, including a re-analysis of two water sampling moments 
     #the re-analysis results are in a separate tab, and the results of the first (wrong) analysis are removed from the other tab (on sampling moment was in 2025)
 
-fin_pfas_added = "Mass_pure_PFAS_in_Date.csv" #pure PFAS mass added to the water on 2 dates; sum for all compartments (mg)
+fin_pfas_ini_r1 = "Mass_pure_PFAS_r1.csv" #pure PFAS mass added to the water before or during r1; sum for all compartments (mg)
+# Data for added PFAS prior to r4 is loaded separately from labform: PFAS_added
 
 # dataframe with the dates of sowing and harvesting; take care: index and roundnr available
 dates_round_plants= pd.DataFrame({"start":[datetime.strptime('28-Mar-2025', "%d-%b-%Y"), datetime.strptime('28-May-2025', "%d-%b-%Y"),\
@@ -93,13 +94,15 @@ plt.rcParams.update({'figure.max_open_warning': 0}) #suppresses (erroneous) warn
 #%% Import
 #=============================================================================
 
+#Water volume
 # import reconstructed water volume rounds 1-4 with Date as the index column 
 vol_reconstr_r1_3 = pd.read_excel(os.path.join(indir, fin_2025),    
                          sheet_name="Watervolume",
                          usecols=["Date", "Sand", "Zeolite", "Activated Carbon","Bentonite", "Magnetite"], skiprows=6, index_col=0)
+
+# Load the water level and look-up table (from labform Watervolume)
 wl_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
                          sheet_name ='Watervolume',usecols=["Date", "Sand", "Zeolite", "Biochar","Iron-Zeolite", "Sand+salt"], skiprows=3,index_col=0) #for round 3 last part
-# Known volume at water level (see labform Watervolume)
 Lookup_from_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
                          sheet_name ='Watervolume',usecols=["water level (cm)", "Volume (l)"], skiprows=3,index_col=0) #the lookup table water level --> volume since round 4
 
@@ -113,26 +116,17 @@ vol_interpolated_since_r4 = pd.DataFrame(
     index=wl_from_r4.index,
     columns=wl_from_r4.columns
 )
-
+#the volume for all rounds combined
 df_vol_allrounds = pd.concat([vol_reconstr_r1_3, vol_interpolated_since_r4], axis=0, sort=False) 
 
 
-#Total PFAS mass added (microg) to each water storage reservoir 
-pfas_added = pd.read_csv(fin_pfas_added, sep=';',index_col=0)
+#initial mass PFAS in r1 and r4
+pfas_ini_mass_allfive_r1 = pd.read_csv(fin_pfas_ini_r1, sep=';',index_col=0) #Total PFAS mass added (microg) to all reservoirs in r1
+pfas_added_per_comp_r4 = pd.read_excel(os.path.join(indir, fin_2026),\
+                        sheet_name ='adding PFAS',\
+                        usecols=["Short name","Sand", "Zeolite", "Biochar","Iron-Zeolite", "Sand+salt","Date_added"],\
+                        skiprows=1,index_col='Short name') #in mg per compartment
 
-df_pfas_added = pd.concat([
-    pd.DataFrame({
-        'compound': pfas_added.columns,
-        'date_added': pd.to_datetime(pfas_added.loc['Date_r1'], errors='coerce'),
-        'mass': pd.to_numeric(pfas_added.loc['Mass_mg_r1'], errors='coerce') * 1000 / 5, # in micrograms per compartment
-    }),
-    pd.DataFrame({
-        'compound': pfas_added.columns,
-        'date_added': pd.to_datetime(pfas_added.loc['Date_r2'], errors='coerce'),
-        'mass': pd.to_numeric(pfas_added.loc['Mass_mg_r2'], errors='coerce') * 1000 / 5, # in micrograms per compartment
-    }),
-], ignore_index=True).dropna(subset=['date_added'])
-df_pfas_added.loc[df_pfas_added['mass'].eq(0), 'mass'] = np.nan
 
 #% import meta data 
 cols_meta = ['labcode', 'matrix','soil type','biota','plant tissue',
@@ -278,139 +272,14 @@ print(f'Number of rows df_all_agro {np.size(df_all_agro,0)} , of which soil: {np
 #pd.set_option('display.max_rows', None)
 #print(df_all_agro[:5])
 
-
-
-#%% Process
-#=============================================================================
-
-#%Estimate volume of water per compartment, which can be multiplied by pivot dataframe (concentration) to yield mass
-vol_water_wetsoil=50 #the volume of water in wet (terrestrial) soil, see box A (Zwart, 2025)
-
-#Add water volume in soil and plant for all times but the first (rough estimate, assuming it is always wetted)
-df_vol_wetsoil = df_vol_allrounds.copy()
-df_vol_wetsoil.index = pd.to_datetime(df_vol_wetsoil.index, errors='coerce')
-df_vol_wetsoil = df_vol_wetsoil.loc[~df_vol_wetsoil.index.isna()].sort_index()
-df_vol_wetsoil = df_vol_wetsoil.apply(pd.to_numeric, errors='coerce')
-df_vol_wetsoil.iloc[1:] = df_vol_wetsoil.iloc[1:].add(vol_water_wetsoil)
-
-#% Interpolate the water and wet soil volume per compartment on sampling dates 
-#   df_vol_allrounds['date_float'] = [da.timestamp() for da in df_vol_allrounds.index] #add column with numeric date (float) for interpolation;   .index.to_list()
-#   df_vol_allrounds.set_index('date_float',inplace=True) #modify dataframe forever (not creating a new one; for debugging still to be possible I only use it when I change the index)
-
-dates_sampling = pd.DatetimeIndex(
-    pd.to_datetime(df_water_agro['Date'], errors='coerce').dropna().unique()
-).sort_values()
-df_vol_wetsoil_onsampling = pd.DataFrame(index=dates_sampling)
-df_vol_wetsoil_onsampling.index.name = 'Date'
-
-for soil in df_vol_wetsoil.columns:
-    volume_measurements = df_vol_wetsoil[soil].dropna()
-    if volume_measurements.empty:
-        raise ValueError(f'No volume measurements found for {soil}')
-
-    sampling_in_range = (
-        (dates_sampling >= volume_measurements.index.min())
-        & (dates_sampling <= volume_measurements.index.max())
-    )
-    interpolated_volume = pd.Series(np.nan, index=dates_sampling, dtype=float)
-    interpolated_volume.loc[sampling_in_range] = np.interp(
-        dates_sampling[sampling_in_range].asi8,
-        volume_measurements.index.asi8,
-        volume_measurements.to_numpy(),
-    )
-    df_vol_wetsoil_onsampling[soil] = interpolated_volume
-
-#plot the volume in tank and soil interpolated on sampling dates 
-df_vol_wetsoil_onsampling_plot=df_vol_wetsoil_onsampling.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
-fabfunctions.plot_timeseries(df_vol_wetsoil_onsampling_plot, outdir_plot_water,
-                     fname= f"Water volume in tank and soil_interpolated on t(PFAS)", ylab=f"Water volume in tank and soil (l)", 
-                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) 
-
-#plot the original volume of water and wetsoil
-df_vol_wetsoil_plot=df_vol_wetsoil.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
-fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
-                     fname= f"Water volume in tank and soil (as read from marks and rod)", ylab=f"Water volume in tank and soil (l)", 
-                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) 
-
-#Estimate water volume from assuming that mass(CL) is preserved (second method)
-# # df_vol = pd.DataFrame({'date':dates_sampling})
-# # df_vol.set_index('date', inplace=True)
-
-# # dates_sampling_float= [da.timestamp() for da in dates_sampling] #numeric date (float) needed for interpolation; 
-
-# # for soil in df_vol_allrounds.columns:  #INTERPOLATE VOLUME for soil ('type' cannot be used, as it is protected)
-# #     df_vol[soil] = np.interp(dates_sampling_float, 
-# #                                df_vol_allrounds.index.to_list(), df_vol_allrounds[soil].values) #soil must be [], and not in between .., since a space occurs in one of the names
-
-# # df_vol_plot=df_vol.reindex(soiltypes_goodorder) #Activated carbon is often first, change to order in greenhouse
-
-# # fabfunctions.plot_timeseries(df_vol, outdir_plot_water,
-# #                      fname= f"Water volume on sampling", ylab=f"Interpolated water volume (l)", 
-# #                      dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) #plot the interpolatede volume, which is used further on
-
-
-#%% Plot water data
-#=============================================================================                                                         
-#% Make figure of PFAS in water over time
-
 #analyse for these PFAS compounds
-compounds_select = ['PFBA', 'PFHxA', 'PFHpA', 'PFOA', 'PFBS', 'PFOS', 'PFHpS', 'PFHxS',
-                    'PFPeA', 'PFPeS', '4_2 FTS', '6_2 FTS'] 
-
-unit_water_NGAC = "\u03bcg/l"
-
-df_waterpfasmass_aggr = {} #for aggregation of water mass by compound
-
-for comp in compounds_select:
-    if comp in mapping_agro['naam'].keys():
-        fullname = mapping_agro['naam'][comp]
-                       
-        # Create pivot table for this component
-        df_pivot = df_water_agro.pivot_table(
-            index='Date', columns='soil type', values=fullname
-        )
-        
-        #(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
-    
-        ### plot concentration   #first and second argument need to given, others are matched by defined name
-        df_pivot_plot=df_pivot.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
-
-        figname = f"Water_conc  {comp.replace(':','_')}"
-        fabfunctions.plot_timeseries(df_pivot_plot, outdir_plot_water,
-                    fname=figname, ylab=f"Concentration {comp} ({unit_water_NGAC})", 
-                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
-    
-        # Align dates and soil types explicitly before converting concentrations to mass.
-        df_waterpfasmass_aggr[comp] = df_vol_wetsoil_onsampling.reindex(
-            index=df_pivot_plot.index, columns=df_pivot_plot.columns
-        ).mul(df_pivot_plot)
-        
-
-        #### plot mass  
-        figname = f"Water_mass_ {comp.replace(':','_')}"
-        if comp in list(pfas_added.columns): #for the components that were added
-            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water,
-                    fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
-                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
-                    mass_ini=df_pfas_added.loc[df_pfas_added['compound'] == comp])
-        else:                                   #for the components that were not added
-            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water, 
-                    fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
-                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
-
-        # Check that the final pivot uses every normalized water-sampling date for PFBA (that was always in water, whereas '6_2 FTS' was not).
-        if comp == 'PFBA':
-            if df_pivot.index.equals(dates_sampling):
-                print('Sampling dates and dates according to pivot are identical.')
-            else:
-                raise ValueError('Sampling dates and dates according to pivot are not identical.')
+compounds_select = ['PFBA', 'PFPeA', 'PFHxA', 'PFHpA', 'PFOA',
+                    'PFBS', 'PFPeS', 'PFHxS', 'PFHpS','PFOS',  
+                      '4_2 FTS', '6_2 FTS'] 
 
 
-
-
-
-
-
+#%% Process (1 plant, 2 water, 3 soil)
+#=============================================================================
 #%% Plot plantdata
 #=============================================================================                                                         
 
@@ -520,7 +389,7 @@ for specie in species:
         # Create and save the figure 
         fabfunctions.plot_heat_map(df5x4_1comp_subcomp_soil_plot, outdir_plot_plant, f"{specie}_Plant_mass_heat map_in_r{rnd}.png",\
                                         color_map='YlGn', title_heat= f"Mass {specie} r{rnd} (g)",\
-                                        vmax=None if comp == 'PFBA' else 250)#ylab ='', annotation=None
+                                        vmax= 250)#ylab ='', annotation=None
         
         
         
@@ -735,6 +604,210 @@ for comp, df_plantmass_by_round in df_plantpfasmass_aggr.items():
     )
 
 
+
+#%% Plot water data
+#=============================================================================   
+
+#%Estimate volume of water per compartment, which can be multiplied by pivot dataframe (concentration) to yield mass
+vol_water_wetsoil=50 #the volume of water in wet (terrestrial) soil, see box A (Zwart, 2025)
+
+#Add water volume in soil and plant for all times but the first (rough estimate, assuming it is always wetted)
+df_vol_wetsoil = df_vol_allrounds.copy()
+df_vol_wetsoil.index = pd.to_datetime(df_vol_wetsoil.index, errors='coerce')
+df_vol_wetsoil = df_vol_wetsoil.loc[~df_vol_wetsoil.index.isna()].sort_index()
+df_vol_wetsoil = df_vol_wetsoil.apply(pd.to_numeric, errors='coerce')
+df_vol_wetsoil.iloc[1:] = df_vol_wetsoil.iloc[1:].add(vol_water_wetsoil)
+
+#% Interpolate the water and wet soil volume per compartment on sampling dates 
+#   df_vol_allrounds['date_float'] = [da.timestamp() for da in df_vol_allrounds.index] #add column with numeric date (float) for interpolation;   .index.to_list()
+#   df_vol_allrounds.set_index('date_float',inplace=True) #modify dataframe forever (not creating a new one; for debugging still to be possible I only use it when I change the index)
+
+dates_sampling = pd.DatetimeIndex(
+    pd.to_datetime(df_water_agro['Date'], errors='coerce').dropna().unique()
+).sort_values()
+df_vol_wetsoil_onsampling = pd.DataFrame(index=dates_sampling)
+df_vol_wetsoil_onsampling.index.name = 'Date'
+
+for soil in df_vol_wetsoil.columns:
+    volume_measurements = df_vol_wetsoil[soil].dropna()
+    if volume_measurements.empty:
+        raise ValueError(f'No volume measurements found for {soil}')
+
+    sampling_in_range = (
+        (dates_sampling >= volume_measurements.index.min())
+        & (dates_sampling <= volume_measurements.index.max())
+    )
+    interpolated_volume = pd.Series(np.nan, index=dates_sampling, dtype=float)
+    interpolated_volume.loc[sampling_in_range] = np.interp(
+        dates_sampling[sampling_in_range].asi8,
+        volume_measurements.index.asi8,
+        volume_measurements.to_numpy(),
+    )
+    df_vol_wetsoil_onsampling[soil] = interpolated_volume
+
+#plot the volume in tank and soil interpolated on sampling dates 
+df_vol_wetsoil_onsampling_plot=df_vol_wetsoil_onsampling.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
+fabfunctions.plot_timeseries(df_vol_wetsoil_onsampling_plot, outdir_plot_water,
+                     fname= f"Water volume in tank and soil_interpolated on t(PFAS)", ylab=f"Water volume in tank and soil (l)", 
+                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) 
+
+#plot the original volume of water and wetsoil
+df_vol_wetsoil_plot=df_vol_wetsoil.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
+fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
+                     fname= f"Water volume in tank and soil (as read from marks and rod)", ylab=f"Water volume in tank and soil (l)", 
+                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) 
+
+#Estimate water volume from assuming that mass(CL) is preserved (second method)
+# # df_vol = pd.DataFrame({'date':dates_sampling})
+# # df_vol.set_index('date', inplace=True)
+
+# # dates_sampling_float= [da.timestamp() for da in dates_sampling] #numeric date (float) needed for interpolation; 
+
+# # for soil in df_vol_allrounds.columns:  #INTERPOLATE VOLUME for soil ('type' cannot be used, as it is protected)
+# #     df_vol[soil] = np.interp(dates_sampling_float, 
+# #                                df_vol_allrounds.index.to_list(), df_vol_allrounds[soil].values) #soil must be [], and not in between .., since a space occurs in one of the names
+
+# # df_vol_plot=df_vol.reindex(soiltypes_goodorder) #Activated carbon is often first, change to order in greenhouse
+
+# # fabfunctions.plot_timeseries(df_vol, outdir_plot_water,
+# #                      fname= f"Water volume on sampling", ylab=f"Interpolated water volume (l)", 
+# #                      dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) #plot the interpolatede volume, which is used further on
+
+
+
+
+                                                      
+#% Make figure of PFAS in water over time
+unit_water_NGAC = "\u03bcg/l" #microgram per liter
+
+# Initial mass in water by year.
+Soiltypes2025= ["Sand", "Zeolite", "Activated Carbon","Bentonite", "Magnetite"]
+Soiltypes2026= ["Sand", "Zeolite", "Biochar","Iron-Zeolite", "Sand+salt"]
+soiltypes_by_year = {
+    2025: Soiltypes2025,
+    2026: Soiltypes2026,
+}
+##all_soiltypes = list(dict.fromkeys(
+#    soiltype
+#    for soiltypes in soiltypes_by_year.values()
+#    for soiltype in soiltypes
+#))
+
+df_pfas_ini_2025 = pd.concat([
+    pd.DataFrame({
+        'compound': pfas_ini_mass_allfive_r1.columns,
+        'date_added': pd.to_datetime(pfas_ini_mass_allfive_r1.loc['Date_r1'], errors='coerce'),
+        'mass': pd.to_numeric(pfas_ini_mass_allfive_r1.loc['Mass_mg_r1'], errors='coerce') * 1000 / 5, # in micrograms per compartment
+    }),
+], ignore_index=True).dropna(subset=['date_added'])
+df_pfas_ini_2025.loc[df_pfas_ini_2025['mass'].eq(0), 'mass'] = np.nan
+df_pfas_ini_2025[Soiltypes2025] = np.repeat(
+    df_pfas_ini_2025['mass'].to_numpy()[:, np.newaxis],
+    len(Soiltypes2025),
+    axis=1,
+)
+df_pfas_ini_2025 = df_pfas_ini_2025.drop(columns='mass').set_index('compound')
+
+
+#create the PFAS ini in 2026: df_pfas_ini_2025+ df_pfas_added_r4- taken out with plants - taken out with soil removal
+df_pfas_added_r4 = pfas_added_per_comp_r4.rename_axis('compound').rename(
+    columns={'Date_added': 'date_added'}
+).copy()
+df_pfas_added_r4['date_added'] = pd.to_datetime(
+    df_pfas_added_r4['date_added'], errors='coerce'
+)
+df_pfas_added_r4 = df_pfas_added_r4.dropna(subset=['date_added'])
+df_pfas_added_r4[Soiltypes2026] = (
+    df_pfas_added_r4[Soiltypes2026]
+    .apply(pd.to_numeric, errors='coerce')
+    .mul(1000)  # in micrograms per compartment
+    .replace(0, np.nan)
+)
+df_pfas_added_r4 = df_pfas_added_r4[['date_added', *Soiltypes2026]]
+
+
+df_pfas_ini_2025_on_2026 = pd.DataFrame(index=df_pfas_ini_2025.index, columns=Soiltypes2026)
+df_pfas_ini_2025_on_2026[Soiltypes2026] = pd.DataFrame(
+    df_pfas_ini_2025.reindex(Soiltypes2025).to_numpy(),
+    index=df_pfas_ini_2025.index,
+    columns=Soiltypes2026,
+)
+df_pfas_ini_2026 = df_pfas_ini_2025_on_2026.add(df_pfas_added_r4[Soiltypes2026].sum(), fill_value=0)
+
+
+for comp in compounds_select:
+    #subtract the amount that was taken out of sytem by plants
+    plant_mass_by_round = df_plantpfasmass_aggr[comp]
+    plant_mass_2025 = (
+        plant_mass_by_round.reindex(index=rounds_by_year_aggr[2025])
+        .sum(axis=0, min_count=1)
+    )
+    plant_mass_2025_for_2026 = pd.Series(
+        plant_mass_2025.reindex(Soiltypes2025).to_numpy(),
+        index=Soiltypes2026,
+    )
+
+    df_pfas_ini_2026[Soiltypes2026] = df_pfas_ini_2026[Soiltypes2026].subtract(
+        plant_mass_2025_for_2026,
+        fill_value=0,
+    )
+
+#analyse the water mass further and aggregate 
+df_waterpfasmass_aggr = {} #for aggregation of water mass by compound for all soils and all rounds
+
+for comp in compounds_select:
+    if comp in mapping_agro['naam'].keys():
+        fullname = mapping_agro['naam'][comp]
+                       
+        # Create pivot table for this component
+        df_pivot = df_water_agro.pivot_table(
+            index='Date', columns='soil type', values=fullname
+        )
+        
+        #(f'Making pivot water for PFAS key: {comp}, with full name: {mapping_agro['naam'][comp]}')
+    
+        ### plot concentration   #first and second argument need to given, others are matched by defined name
+        df_pivot_plot=df_pivot.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
+
+        figname = f"Water_conc  {comp.replace(':','_')}"
+        fabfunctions.plot_timeseries(df_pivot_plot, outdir_plot_water,
+                    fname=figname, ylab=f"Concentration {comp} ({unit_water_NGAC})", 
+                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
+    
+        # Align dates and soil types explicitly before converting concentrations to mass.
+        df_waterpfasmass_aggr[comp] = df_vol_wetsoil_onsampling.reindex(
+            index=df_pivot_plot.index, columns=df_pivot_plot.columns
+        ).mul(df_pivot_plot)
+        
+
+        #### plot mass  
+        figname = f"Water_mass_ {comp.replace(':','_')}"
+        if comp in list(df_pfas_ini_2026.columns): #for the components that were added
+
+
+
+            
+            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water,
+                    fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
+                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
+                    mass_ini=mass_ini)
+        else:                                   #for the components that were not added
+            fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water, 
+                    fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
+                    dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
+
+        # Check that the final pivot uses every normalized water-sampling date for PFBA (that was always in water, whereas '6_2 FTS' was not).
+        if comp == 'PFBA':
+            if df_pivot.index.equals(dates_sampling):
+                print('Sampling dates and dates according to pivot are identical.')
+            else:
+                raise ValueError('Sampling dates and dates according to pivot are not identical.')
+
+
+
+
+
+
 #%% Process the ICP-MS data (Gd)
 
 #read the background concentration derived from comparison with other REE by Marc Verheul    READ FROM LABFORM? THIS FILE HAS ALL WATER DATA OBTAINED (STEP IN BETWEEN THOUGH)
@@ -841,6 +914,9 @@ for rnd in  Rounds_soil_sampled:
                                               )#ylab ='',  annotation=None
 
 
+
+#% Make aggregated plots with water and plant data combined
+#%%
 # Plot interpolated water mass at each round start: four round bars per soil type.
 # round_colors = dict(zip(dates_round_plants['roundnr'], sns.color_palette('tab10', len(dates_round_plants))))
 # for comp in compounds_select:
@@ -921,72 +997,46 @@ for rnd in  Rounds_soil_sampled:
 #             stacked=False,
 #         )
 
-# Initial mass in water by year.
-#still to be checked from HERE
-Soiltypes2025= ["Sand", "Zeolite", "Activated Carbon","Bentonite", "Magnetite"]
-Soiltypes2026= ["Sand", "Zeolite", "Biochar","Iron-Zeolite", "Sand+salt"]
-soiltypes_by_year = {
-    2025: Soiltypes2025,
-    2026: Soiltypes2026,
-}
-all_soiltypes = list(dict.fromkeys(
-    soiltype
-    for soiltypes in soiltypes_by_year.values()
-    for soiltype in soiltypes
-))
 
-df_pfas_added_by_year = {}
-for comp in pfas_added.columns:
-    added_for_compound = df_pfas_added.loc[df_pfas_added['compound'].eq(comp)]
-    added_mass_by_year = (
-        added_for_compound.groupby(added_for_compound['date_added'].dt.year)['mass']
-        .sum(min_count=1)
-        .reindex(list(rounds_by_year_aggr))
-    )
-    mass_by_year = pd.DataFrame(
-        np.nan,
-        index=list(rounds_by_year_aggr),
-        columns=all_soiltypes,
-    )
-    for year, soiltypes in soiltypes_by_year.items():
-        mass_by_year.loc[year, soiltypes] = added_mass_by_year.loc[year]
-    mass_by_year.index.name = 'year'
-    df_pfas_added_by_year[comp] = mass_by_year.replace(0, np.nan)
 
-df_plantpfasmass_by_year = {}
-for comp, mass_by_round in df_plantpfasmass_aggr.items():
-    mass_by_year = pd.DataFrame({
-        year: mass_by_round.loc[
-            mass_by_round.index.isin(rounds)
-        ].sum(axis=0, min_count=1)
-        for year, rounds in rounds_by_year_aggr.items()
-    }).transpose()
-    mass_by_year.index.name = 'year'
-    mass_by_year = mass_by_year.replace(0, np.nan)
-    df_plantpfasmass_by_year[comp] = mass_by_year
 
-# Plot all compounds per year, with one line for each soil type.
-for year in rounds_by_year_aggr:
-    mass_by_compound = pd.DataFrame({
-        comp: mass_by_year.loc[year]
-        for comp, mass_by_year in df_plantpfasmass_by_year.items()
-    }).reindex(soiltypes_goodorder)
 
-    ax = mass_by_compound.transpose().plot(
-        marker='o',
-        linestyle='-',
-        figsize=(11.69, 5.27),
-    )
-    ax.set(
-           ylabel=f"Mass in {specie} in {year} ({unit_plant_NGAC[:2]})",
-    )
-    ax.set_xticks(range(len(mass_by_compound.columns)))
-    ax.set_xticklabels(mass_by_compound.columns, rotation=90)
-    ax.legend(title='Soil type', bbox_to_anchor=(1.02, 1), loc='upper left')
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(outdir_plot_combine, f"{specie}_mass_all_compounds_{year}.png"),
-        bbox_inches='tight',
-        dpi=300,
-    )
-    plt.close()
+
+#THESE ARE THE PLOTS I WANT TO MAKE....
+# df_plantpfasmass_by_year = {}
+# for comp, mass_by_round in df_plantpfasmass_aggr.items():
+#     mass_by_year = pd.DataFrame({
+#         year: mass_by_round.loc[
+#             mass_by_round.index.isin(rounds)
+#         ].sum(axis=0, min_count=1)
+#         for year, rounds in rounds_by_year_aggr.items()
+#     }).transpose()
+#     mass_by_year.index.name = 'year'
+#     mass_by_year = mass_by_year.replace(0, np.nan)
+#     df_plantpfasmass_by_year[comp] = mass_by_year
+
+# # Plot all compounds per year, with one line for each soil type.
+# for year in rounds_by_year_aggr:
+#     mass_by_compound = pd.DataFrame({
+#         comp: mass_by_year.loc[year]
+#         for comp, mass_by_year in df_plantpfasmass_by_year.items()
+#     }).reindex(soiltypes_goodorder)
+
+#     ax = mass_by_compound.transpose().plot(
+#         marker='o',
+#         linestyle='-',
+#         figsize=(11.69, 5.27),
+#     )
+#     ax.set(
+#            ylabel=f"Mass in {specie} in {year} ({unit_plant_NGAC[:2]})",
+#     )
+#     ax.set_xticks(range(len(mass_by_compound.columns)))
+#     ax.set_xticklabels(mass_by_compound.columns, rotation=90)
+#     ax.legend(title='Soil type', bbox_to_anchor=(1.02, 1), loc='upper left')
+#     plt.tight_layout()
+#     plt.savefig(
+#         os.path.join(outdir_plot_combine, f"{specie}_mass_all_compounds_{year}.png"),
+#         bbox_inches='tight',
+#         dpi=300,
+#     )
+#     plt.close()
