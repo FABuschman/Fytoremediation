@@ -62,10 +62,9 @@ def plot_timeseries(df, path, fname, cmap='tab20',
                         marker='s',
                         linestyle='None',
                         color=water_mass_color,
-                        markersize=8,
-                        label=f'{soiltype} initial mass',
+                        markersize=8, # label=f'{soiltype} initial mass',
                     )
-        elif {'date_added', 'mass'}.issubset(mass_ini.columns):
+        elif {'date_added', 'mass'}.issubset(mass_ini.columns): #can be removed?
             ax.plot(
                 mass_ini.date_added,
                 mass_ini.mass,

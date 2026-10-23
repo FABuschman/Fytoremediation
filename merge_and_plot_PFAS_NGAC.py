@@ -284,7 +284,7 @@ compounds_select = ['PFBA', 'PFPeA', 'PFHxA', 'PFHpA', 'PFOA',
 #=============================================================================                                                         
 
 #make plots for these plant species, per round, per PFAS component 
-species=['sunflower']#, 'plantain']
+species=['sunflower', 'plantain']
 
 #make end date later, since many plants were sampled after 'end of round 3'
 dates_round_plants_ext=dates_round_plants.copy() #copy the correct dates
@@ -315,7 +315,7 @@ df_numeric.sum()
 
 unit_plant_NGAC = "\u03bcg/kg"
 
-df_plantpfasmass_aggr = {}
+df_sunfl_pfasmass_aggr = {} #only aggregate for sunflower
 for specie in species:
     
     # filter data frame on plant species
@@ -537,10 +537,12 @@ for specie in species:
                 df_pfasmassplants_1comp_soil_totals = df5x5_1comp_tis_soil_plot.sum(axis=1).to_frame().T
                 df_pfasmassplants_1comp_soil_totals.index = [rnd]
                 df_pfasmassplants_1comp_soil_totals.index.name = 'roundnr'
-                df_plantpfasmass_aggr[comp] = pd.concat([
-                    df_plantpfasmass_aggr.get(comp, pd.DataFrame()),
-                    df_pfasmassplants_1comp_soil_totals,
-                ])
+                
+                if specie == 'sunflower':
+                    df_sunfl_pfasmass_aggr[comp] = pd.concat([
+                        df_sunfl_pfasmass_aggr.get(comp, pd.DataFrame()),
+                        df_pfasmassplants_1comp_soil_totals,
+                    ])
                 
                 ### Create and save stacked bar plot: for whole round and uptake per day
                 #
@@ -589,7 +591,7 @@ for specie in species:
 
 # Plot the aggregated plant mass: four round bars per soil type.
 round_colors = dict(zip(range(1, 5), sns.color_palette('tab10', 4)))
-for comp, df_plantmass_by_round in df_plantpfasmass_aggr.items():
+for comp, df_plantmass_by_round in df_sunfl_pfasmass_aggr.items():
     df_plantmass_by_round_plot = df_plantmass_by_round.reindex(
         index=range(1, 5), columns=soiltypes_goodorder
     ).transpose()
@@ -731,7 +733,7 @@ df_pfas_ini_2026 = df_pfas_added_r4.copy() #for new components only added in 202
 
 for comp2025 in list(df_pfas_ini_2025.index):
     plant_mass_2025 = (
-        df_plantpfasmass_aggr[comp2025]
+        df_sunfl_pfasmass_aggr[comp2025]
         .reindex(index=rounds_by_year_aggr[2025])
         .sum(axis=0, min_count=1)
     )
@@ -816,12 +818,12 @@ for comp in compounds_select:
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
 
-        # Check that the final pivot uses every normalized water-sampling date for PFBA (that was always in water, whereas '6_2 FTS' was not).
-        if comp == 'PFBA':
-            if df_pivot.index.equals(dates_sampling):
-                print('Sampling dates and dates according to pivot are identical.')
-            else:
-                raise ValueError('Sampling dates and dates according to pivot are not identical.')
+    # Check that the final pivot uses every normalized water-sampling date for PFBA (that was always in water, whereas '6_2 FTS' was not).
+    if comp == 'PFBA':
+        if df_pivot.index.equals(dates_sampling):
+            print('Sampling dates and dates according to pivot are identical.')
+        else:
+            raise ValueError('Sampling dates and dates according to pivot are not identical.')
 
 
 
@@ -934,129 +936,145 @@ for rnd in  Rounds_soil_sampled:
                                               )#ylab ='',  annotation=None
 
 
+#%% Make aggregated plots with water and plant data combined
+#============================================================================= 
 
-#% Make aggregated plots with water and plant data combined
-#%%
-# Plot interpolated water mass at each round start: four round bars per soil type.
-# round_colors = dict(zip(dates_round_plants['roundnr'], sns.color_palette('tab10', len(dates_round_plants))))
-# for comp in compounds_select:
-#     if comp not in df_waterpfasmass_aggr or comp not in df_plantpfasmass_aggr:
-#         continue
+#Plot interpolated water mass at each ROUND start: four round bars per soil type.
+round_colors = dict(zip(dates_round_plants['roundnr'], sns.color_palette('tab10', len(dates_round_plants))))
+for comp in compounds_select:
+    if comp not in df_waterpfasmass_aggr or comp not in df_sunfl_pfasmass_aggr:
+        continue
 
-#     df_watermass_by_date = df_waterpfasmass_aggr[comp]
-#     df_watermass_by_round = pd.DataFrame()
-#     for roundnr in dates_round_plants['roundnr']:
-#         round_dates = dates_round_plants.loc[
-#             dates_round_plants['roundnr'].eq(roundnr), ['start', 'end']
-#         ].iloc[0]
-#         water_mass_at_round_start = {}
+    df_watermass_by_date = df_waterpfasmass_aggr[comp]
+    df_watermass_by_round = pd.DataFrame()
+    for roundnr in dates_round_plants['roundnr']:
+        round_dates = dates_round_plants.loc[
+            dates_round_plants['roundnr'].eq(roundnr), ['start', 'end']
+        ].iloc[0]
+        water_mass_at_round_start = {}
 
-#         for soiltype in soiltypes_goodorder:
-#             if soiltype not in df_watermass_by_date.columns:
-#                 water_mass_at_round_start[soiltype] = np.nan
-#                 continue
+        for soiltype in soiltypes_goodorder:
+            if soiltype not in df_watermass_by_date.columns:
+                water_mass_at_round_start[soiltype] = np.nan
+                continue
 
-#             pfas_mass_comp_rnd_soil_date = df_watermass_by_date[soiltype].dropna()
-#             if pfas_mass_comp_rnd_soil_date.empty:
-#                 water_mass_at_round_start[soiltype] = np.nan
-#                 continue
+            pfas_mass_comp_rnd_soil_date = df_watermass_by_date[soiltype].dropna()
+            if pfas_mass_comp_rnd_soil_date.empty:
+                water_mass_at_round_start[soiltype] = np.nan
+                continue
 
-#             first_measurement_date = pfas_mass_comp_rnd_soil_date.index.min()
-#             if first_measurement_date > round_dates['start']:
-#                 water_mass_at_round_start[soiltype] = (
-#                     pfas_mass_comp_rnd_soil_date.iloc[0]
-#                     if first_measurement_date <= round_dates['end']
-#                     else np.nan
-#                 )
-#                 continue
+            first_measurement_date = pfas_mass_comp_rnd_soil_date.index.min()
+            if first_measurement_date > round_dates['start']:
+                water_mass_at_round_start[soiltype] = (
+                    pfas_mass_comp_rnd_soil_date.iloc[0]
+                    if first_measurement_date <= round_dates['end']
+                    else np.nan
+                )
+                continue
 
-#             water_mass_at_start = (
-#                 pfas_mass_comp_rnd_soil_date
-#                 .reindex(pfas_mass_comp_rnd_soil_date.index.union(
-#                     pd.DatetimeIndex([round_dates['start']])
-#                 ))
-#                 .sort_index()
-#                 .interpolate(method='time')
-#                 .loc[round_dates['start']]
-#             )
-#             water_mass_at_round_start[soiltype] = water_mass_at_start
+            water_mass_at_start = (
+                pfas_mass_comp_rnd_soil_date
+                .reindex(pfas_mass_comp_rnd_soil_date.index.union(
+                    pd.DatetimeIndex([round_dates['start']])
+                ))
+                .sort_index()
+                .interpolate(method='time')
+                .loc[round_dates['start']]
+            )
+            water_mass_at_round_start[soiltype] = water_mass_at_start
 
-#         df_watermass_by_round = pd.concat([
-#             df_watermass_by_round,
-#             pd.DataFrame(water_mass_at_round_start, index=[roundnr]),
-#         ])
+        df_watermass_by_round = pd.concat([
+            df_watermass_by_round,
+            pd.DataFrame(water_mass_at_round_start, index=[roundnr]),
+        ])
 
-#     df_watermass_by_round_plot = df_watermass_by_round
-#     df_watermass_by_round_plot = df_watermass_by_round_plot.reindex(
-#         columns=soiltypes_goodorder
-#     ).transpose()
-#     fabfunctions.plot_bar_stacked(
-#         df_watermass_by_round_plot,
-#         outdir_plot_combine,
-#         f"Water_mass_{comp}_all_rounds.png",
-#         color_stacks=round_colors,
-#         xlab='Soil type',
-#         ylab=f"Mass {comp} in water ({unit_water_NGAC[:2]})",
-#         stacked=False,
-#     )
-
-#     # Align soil-type rows and round-number columns before calculating efficiency.
-#     df_plantmass_by_round_plot = df_plantpfasmass_aggr[comp].transpose().reindex_like(
-#         df_watermass_by_round_plot
-#     )
-#     ratio_plant_water_perc = df_plantmass_by_round_plot.div(
-#         df_watermass_by_round_plot
-#     ).mul(100)
-#     fabfunctions.plot_bar_stacked(
-#             ratio_plant_water_perc,
-#             outdir_plot_combine,
-#             f"Efficiency_{specie}_to_water_mass_perc_{comp}_all_rounds.png",
-#             color_stacks=round_colors,
-#             xlab='Soil type',
-#             ylab=f"Uptake efficiency {comp} (%)",
-#             stacked=False,
-#         )
-
-
+    # # Align soil-type rows and round-number columns before calculating efficiency.
+    # df_plantmass_by_round_plot = df_sunfl_pfasmass_aggr[comp].transpose().reindex_like(
+    #     df_watermass_by_round_plot
+    # )
+    # ratio_plant_water_perc = df_plantmass_by_round_plot.div(
+    #     df_watermass_by_round_plot
+    # ).mul(100)
+    # fabfunctions.plot_bar_stacked(
+    #         ratio_plant_water_perc,
+    #         outdir_plot_combine,
+    #         f"Efficiency_{specie}_to_water_mass_perc_{comp}_all_rounds.png",
+    #         color_stacks=round_colors,
+    #         xlab='Soil type',
+    #         ylab=f"Uptake efficiency {comp} (%)",
+    #         stacked=False,
+    #     )
+    
+    df_watermass_by_round_plot = df_watermass_by_round
+    df_watermass_by_round_plot = df_watermass_by_round_plot.reindex(
+        columns=soiltypes_goodorder
+    ).transpose()
+    fabfunctions.plot_bar_stacked(
+        df_watermass_by_round_plot,
+        outdir_plot_combine,
+        f"Water_mass_{comp}_all_rounds.png",
+        color_stacks=round_colors,
+        xlab='Soil type',
+        ylab=f"Mass {comp} in water ({unit_water_NGAC[:2]})",
+        stacked=False,
+    )
 
 
 
+#The efficiency per YEAR
+#prepare the plant data
+df_sunfl_pfasmass_by_year = {}
+for comp, mass_by_round in df_sunfl_pfasmass_aggr.items():
+    mass_by_year = pd.DataFrame({
+        year: mass_by_round.loc[
+            mass_by_round.index.isin(rounds)
+        ].sum(axis=0, min_count=1)
+        for year, rounds in rounds_by_year_aggr.items()
+    }).transpose()
+    mass_by_year.index.name = 'year'
+    mass_by_year = mass_by_year.replace(0, np.nan)
+    df_sunfl_pfasmass_by_year[comp] = mass_by_year
 
-#THESE ARE THE PLOTS I WANT TO MAKE....
-# df_plantpfasmass_by_year = {}
-# for comp, mass_by_round in df_plantpfasmass_aggr.items():
-#     mass_by_year = pd.DataFrame({
-#         year: mass_by_round.loc[
-#             mass_by_round.index.isin(rounds)
-#         ].sum(axis=0, min_count=1)
-#         for year, rounds in rounds_by_year_aggr.items()
-#     }).transpose()
-#     mass_by_year.index.name = 'year'
-#     mass_by_year = mass_by_year.replace(0, np.nan)
-#     df_plantpfasmass_by_year[comp] = mass_by_year
+year =2025
+df_efficiency_ini_2025 = pd.DataFrame(
+    index=Soiltypes2025,
+    columns=df_pfas_ini_2025.index,
+    dtype=float,
+)
+for soiltype in Soiltypes2025:
+    for comp2025 in list(df_pfas_ini_2025.index):
+        df_efficiency_ini_2025.loc[soiltype, comp2025] = (
+            df_sunfl_pfasmass_by_year[comp2025].loc[year, soiltype]
+            / df_pfas_ini_2025.loc[comp2025, soiltype]
+            * 100
+        )
 
-# # Plot all compounds per year, with one line for each soil type.
-# for year in rounds_by_year_aggr:
-#     mass_by_compound = pd.DataFrame({
-#         comp: mass_by_year.loc[year]
-#         for comp, mass_by_year in df_plantpfasmass_by_year.items()
-#     }).reindex(soiltypes_goodorder)
+fabfunctions.plot_bar_stacked(
+        df_efficiency_ini_2025,
+        outdir_plot_combine,
+        f"Efficiency_ini_2025_all_soiltypes.png",
+        color_stacks=round_colors,
+        xlab='Soil type',
+        ylab=f"Efficiency (%)",
+        stacked=True,
+    )
 
-#     ax = mass_by_compound.transpose().plot(
-#         marker='o',
-#         linestyle='-',
-#         figsize=(11.69, 5.27),
-#     )
-#     ax.set(
-#            ylabel=f"Mass in {specie} in {year} ({unit_plant_NGAC[:2]})",
-#     )
-#     ax.set_xticks(range(len(mass_by_compound.columns)))
-#     ax.set_xticklabels(mass_by_compound.columns, rotation=90)
-#     ax.legend(title='Soil type', bbox_to_anchor=(1.02, 1), loc='upper left')
-#     plt.tight_layout()
-#     plt.savefig(
-#         os.path.join(outdir_plot_combine, f"{specie}_mass_all_compounds_{year}.png"),
-#         bbox_inches='tight',
-#         dpi=300,
-#     )
-#     plt.close()
+
+ax = df_sunfl_pfasmass_by_year[comp].loc[year].transpose().plot(
+        marker='o',
+        linestyle='-',
+        figsize=(11.69, 5.27),
+    )
+ax.set(
+        ylabel=f"Mass in {specie} in {year} ({unit_plant_NGAC[:2]})",
+    )
+ax.set_xticks(range(len(df_sunfl_pfasmass_by_year.columns)))
+ax.set_xticklabels(df_sunfl_pfasmass_by_year.columns, rotation=90)
+ax.legend(title='Soil type', bbox_to_anchor=(1.02, 1), loc='upper left')
+plt.tight_layout()
+plt.savefig(
+os.path.join(outdir_plot_combine, f"{specie}_mass_all_compounds_{year}.png"),
+        bbox_inches='tight',
+        dpi=300,
+    )
+plt.close()
