@@ -144,7 +144,13 @@ def plot_bar_stacked(df_bar, path, fname, color_stacks , xlab='', ylab ='', ymax
     
     # make legend
     handles, labels = ax.get_legend_handles_labels()
-    ax.legend(handles[::-1], labels[::-1], loc='upper right')#bbox_to_anchor=(1.17, 1),  #the horizontal position is different than in matplotlib plots
+    ax.legend(
+        handles[::-1],
+        labels[::-1],
+        loc='upper left',
+        bbox_to_anchor=(1.02, 1),
+        borderaxespad=0,
+    )
 
     plt.savefig(os.path.join(path, fname), bbox_inches='tight', dpi=300) #using the matplotlib function to save the figure
     

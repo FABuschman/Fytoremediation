@@ -597,11 +597,11 @@ for comp, df_plantmass_by_round in df_sunfl_pfasmass_aggr.items():
     ).transpose()
     fabfunctions.plot_bar_stacked(
         df_plantmass_by_round_plot,
-        outdir_plot_combine,
-        f"{specie}_mass_{comp}_all_rounds.png",
+        outdir_plot_plant,
+        f"Sunfl_mass_{comp}_all_rounds.png",
         color_stacks=round_colors,
         xlab='Soil type',
-        ylab=f"Mass {comp} in {specie} ({unit_plant_NGAC[:2]})",
+        ylab=f"Mass {comp} in sunflower ({unit_plant_NGAC[:2]})",
         stacked=False,
     )
 
@@ -882,7 +882,7 @@ for comp in compounds_select:
     ).transpose()
     fabfunctions.plot_bar_stacked(
         df_watermass_by_round_plot,
-        outdir_plot_combine,
+        outdir_plot_water,
         f"Water_mass_{comp}_all_rounds.png",
         color_stacks=round_colors,
         xlab='Soil type',
@@ -1037,29 +1037,55 @@ for year in [2025, 2026]:
         df_sunfl_pfasmass_year = df_sunfl_pfasmass_year.rename(index={'Activated Carbon': 'AC'})
         df_efficiency_ini_year = df_efficiency_ini_year.rename(index={'Activated Carbon': 'AC'})
 
+    plot_compounds = [
+        comp for comp in compounds_select
+        if comp in df_sunfl_pfasmass_year.columns
+    ]
+    df_sunfl_pfasmass_year = df_sunfl_pfasmass_year.reindex(
+        columns=plot_compounds
+    )
+    df_efficiency_ini_year = df_efficiency_ini_year.reindex(
+        columns=plot_compounds
+    )
+    compound_palette = (
+        list(sns.color_palette('Blues', 5))
+        + list(sns.color_palette('Greens', 5))
+        + list(sns.color_palette('Purples', 2))
+    )
+    compound_colors = {
+        comp: color
+        for comp, color in zip(compounds_select, compound_palette)
+        if comp in plot_compounds
+    }
+
     fabfunctions.plot_bar_stacked(
         df_sunfl_pfasmass_year,
         outdir_plot_combine,
-        f"Mass_uptake_by_soiltypes_{year}.png",
-        color_stacks=dict(zip(
-            df_sunfl_pfasmass_year.columns,
-            sns.color_palette('tab20', len(df_sunfl_pfasmass_year.columns)),
-        )),
+        f"Mass_uptake_sunfl_by_soiltypes_{year}.png",
+        color_stacks=compound_colors,
         xlab='Soil type',
         ylab=f"Mass in sunflower ({unit_plant_NGAC[:2]}) in {year}",
         stacked=False,
     )
+    if year==2026:
+        fabfunctions.plot_bar_stacked(
+        df_sunfl_pfasmass_year,
+        outdir_plot_combine,
+        f"Mass_uptake_sunfl_by_soiltypes_cutoff_{year}.png",
+        color_stacks=compound_colors,
+        xlab='Soil type',
+        ymax=5000,
+        ylab=f"Mass in sunflower ({unit_plant_NGAC[:2]}) in {year}",
+        stacked=False,
+        )
 
     fabfunctions.plot_bar_stacked(
         df_efficiency_ini_year,
         outdir_plot_combine,
-        f"Efficiency_ini_all_soiltypes_{year}.png",
-        color_stacks=dict(zip(
-                    df_sunfl_pfasmass_year.columns,
-                    sns.color_palette('tab20', len(df_sunfl_pfasmass_year.columns)),
-                )),
+        f"Efficiency_ini_sunfl_all_soiltypes_{year}.png",
+        color_stacks=compound_colors,
         xlab='Soil type',
-        ylab=f"Efficiency (%) in {year}",
+        ylab=f"Efficiency sunflower (%) in {year}",
         stacked=False,
     )
 
