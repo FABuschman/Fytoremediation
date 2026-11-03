@@ -159,7 +159,8 @@ weight_round3=weight_round3.rename(columns={'total wet weight (g) ': 'tot wet we
 
 #ROUND 4
 weight_round4 = pd.read_excel(os.path.join(indir, fin_2026), sheet_name="Plants-round4",
-                        usecols=['sample code', 'total wet weight (g) ', 'wet weight for Delta-lab (g)', 'dry weight Delta-lab (g) '], index_col='sample code')   #last two for plant state analysis
+                        usecols=['sample code', 'total wet weight (g) ', \
+                                 'wet weight for Delta-lab (g)', 'dry weight Delta-lab (g) '], index_col='sample code')   #last two for plant state analysis
 weight_round4=weight_round4.rename(columns={'total wet weight (g) ': 'tot wet weight'})
 
 #ROUND 5
@@ -174,28 +175,64 @@ weight_allrounds = pd.concat([weight_round1, weight_round2, weight_round3, weigh
 df_meta_allrounds=df_meta_allrounds.join(weight_allrounds, how='left') #join (not merge) to add a column (NaN when no match)
 
 
+#obtain dry factor: 1) use OVEN measured dry and wet weight per sample 2) fill in other values with table Dry_factor_kasDelft.csv (based on Round 3, when most )
 
-#Dry factor is estimated based on round 1 (5 repetitions) and round 3 (1-5 repetitions) for OVEN drying (decided to exclude samples that were freezedried)
-dry_factor ={"flower":0.10,
-              "leaves":0.14,
-              "stem":0.09,
-              "roots":0.10,
-              "seeds":1,
-              "nvt": np.nan,
-              "n.a.": np.nan} #last two added, as these names are used when no tissue was available (resp. for 2025 and 2026)
+# Calculate dry factors from the measured dry/wet weight ratio when available.
+df_meta_allrounds['dry factor'] = np.nan
+measured_weights = (
+    df_meta_allrounds['dry weight Delta-lab (g) '].notna()
+    & df_meta_allrounds['wet weight for Delta-lab (g)'].notna()
+    & df_meta_allrounds['wet weight for Delta-lab (g)'].ne(0)
+)
+df_meta_allrounds.loc[measured_weights, 'dry factor'] = (
+    df_meta_allrounds.loc[measured_weights, 'dry weight Delta-lab (g) ']
+    / df_meta_allrounds.loc[measured_weights, 'wet weight for Delta-lab (g)']
+)
 
-tissue_names=list(dry_factor.keys())[:5]
+# Fill in dry factor from the table for samples where it was not measured directly.
+dry_factor_by_state = pd.read_csv(
+    "Dry_factor_kasDelft.csv",
+    sep=';',
+    index_col=0,
+)
 
-df_meta_allrounds['dry factor'] = [dry_factor[i] if not pd.isnull(i) else np.nan for i in df_meta_allrounds['plant tissue']] #complex way of assigning the dry factor
-# for i in df_meta_allrounds['plant tissue']:
-#     if not pd.isnull(i):
-#         df_meta_allrounds['dry factor'][i] = dry_factor[i]  
-#     else: np.nan 
+tissue_names = dry_factor_by_state.index.tolist()
+
+df_meta_allrounds.replace(  #change names, as they are often with capitals
+    {'Alive': 'alive',
+     'Intermediate': 'intermediate',
+     'Dead': 'dead'},
+    inplace=True
+)
+
+def get_dry_factor(row):
+    tissue = row['plant tissue']
+    if pd.isna(tissue) or tissue in ("nvt", "n.a."):
+        return np.nan
+
+    state = row['Plant state']
+    if pd.isna(state) or not str(state).strip():
+        state = "alive"
+
+    return dry_factor_by_state.at[tissue, state]
+
+# Assign lookup factors only where a measured factor is unavailable.
+missing_dry_factor = df_meta_allrounds['dry factor'].isna()
+if missing_dry_factor.any():
+    df_meta_allrounds.loc[missing_dry_factor, 'dry factor'] = (
+        df_meta_allrounds.loc[missing_dry_factor].apply(get_dry_factor, axis=1)
+    )
+
 
 #Calculate dry weight by multiplying wet weight with dry factor
-df_meta_allrounds['dry weight'] = df_meta_allrounds.apply(lambda r:(r['tot wet weight']*r['dry factor']
-                                                 if type(r['tot wet weight']) in (int, float)
-                                                 else np.nan), axis=1) # conditional columnwise as they are not always numeric
+df_meta_allrounds['dry weight'] = df_meta_allrounds.apply(
+    lambda row: (
+        row['tot wet weight'] * row['dry factor']
+        if type(row['tot wet weight']) in (int, float)
+        else np.nan
+    ),
+    axis=1,
+)
 #print(df_meta_allrounds[490:505])
 
 #% import mapping
@@ -316,6 +353,7 @@ df_numeric.sum()
 unit_plant_NGAC = "\u03bcg/kg"
 
 df_sunfl_pfasmass_aggr = {} #only aggregate for sunflower
+df_sunfl_biomass_by_round = {}
 for specie in species:
     
     # filter data frame on plant species
@@ -339,6 +377,14 @@ for specie in species:
         ### 
         df_plant_1specie_1round_grouped = \
                 df_plant_1specie_1round.groupby(['soil type', 'compartment', 'plant tissue'])['dry weight'].agg('sum').reset_index()
+
+        if specie == 'sunflower':
+            df_sunfl_biomass_by_round[rnd] = (
+                df_plant_1specie_1round.groupby(['soil type', 'plant tissue'])['dry weight']
+                .sum(min_count=1)
+                .unstack('plant tissue')
+                .reindex(columns=tissue_names)
+            )
                 
         #prepare Dataframe to plot as bar
         outdict_tis_soil = {} #method: make a nested dictionary, and convert that again to get a complete 5x5 DataFrame (reason for method: not always data are available for each plant tissue)
@@ -676,10 +722,7 @@ fabfunctions.plot_timeseries(df_vol_wetsoil_plot, outdir_plot_water,
 # #                      dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks) #plot the interpolatede volume, which is used further on
 
 
-
-
-                                                      
-#% Make figure of PFAS in water over time
+#% PFAS mass in water over time
 unit_water_NGAC = "\u03bcg/l" #microgram per liter
 
 # Initial mass in water by year.
@@ -707,7 +750,8 @@ df_pfas_ini_2025[Soiltypes2025] = np.repeat(
 df_pfas_ini_2025 = df_pfas_ini_2025.drop(columns='mass').set_index('compound')
 
 
-#create the PFAS ini in 2026: df_pfas_ini_2025+ df_pfas_added_r4- taken out with plants - taken out with soil removal
+#create the PFAS ini (square in plot) in 2026: 
+# df_pfas_ini_2025+ df_pfas_added_r4- taken out with plants - taken out with soil removal
 df_pfas_added_r4 = pfas_added_per_comp_r4.rename_axis('compound').rename(
     columns={'Date_added': 'date_added'}
 ).copy()
@@ -758,8 +802,8 @@ for comp2025 in list(df_pfas_ini_2025.index):
         df_pfas_ini_2026.loc[comp2025, soiltype2026] = initial_mass
 
 
-#analyse the water mass further and aggregate 
-df_waterpfasmass_aggr = {} #for aggregation of water mass by compound for all soils and all rounds
+#analyse the mass in water further and aggregate 
+df_water_pfasmass_aggr = {} #for aggregation of water mass by compound for all soils and all rounds
 
 for comp in compounds_select:
     if comp in mapping_agro['naam'].keys():
@@ -779,14 +823,32 @@ for comp in compounds_select:
                     fname=figname, ylab=f"Concentration {comp} ({unit_water_NGAC})", 
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
     
-        # Align dates and soil types explicitly and convert concentrations and volume to mass.
-        df_waterpfasmass_aggr[comp] = df_vol_wetsoil_onsampling.reindex(
+        
+        #### plot mass  
+        
+        # Align dates and soil types explicitly and multiply concentrations and volume to mass.
+        df_water_pfasmass_aggr[comp] = df_vol_wetsoil_onsampling.reindex(
             index=df_pivot_plot.index, columns=df_pivot_plot.columns
         ).mul(df_pivot_plot)
-        
-
-        #### plot mass  
+                
         figname = f"Water_mass_ {comp}"  #.replace(':','_')
+        water_mass_plot = df_water_pfasmass_aggr[comp].copy()
+        if not water_mass_plot.empty:
+            round3_end = dates_round_plants.loc[
+                dates_round_plants['roundnr'].eq(3), 'end'
+            ].iloc[0]
+            round4_start = dates_round_plants.loc[
+                dates_round_plants['roundnr'].eq(4), 'start'
+            ].iloc[0]
+            round_break = round3_end + (round4_start - round3_end) / 2
+            water_mass_plot = pd.concat([
+                water_mass_plot,
+                pd.DataFrame(
+                    np.nan,
+                    index=pd.DatetimeIndex([round_break]),
+                    columns=water_mass_plot.columns,
+                ),
+            ]).sort_index()
         
         #convert initial mass data to a consistent format for plotting water data (both years)
         mass_ini_frames = []
@@ -810,12 +872,19 @@ for comp in compounds_select:
         mass_ini = mass_ini.fillna(np.nan)
         mass_ini = mass_ini[['date_added', *soiltypes_goodorder]]
             
-        fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water,
+        fabfunctions.plot_timeseries(water_mass_plot, outdir_plot_water,
                 fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
                 dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
                 mass_ini=mass_ini)
+        
+        if comp== 'PFBA':
+            fabfunctions.plot_timeseries(water_mass_plot, outdir_plot_water,
+                            fname=f"{figname}_cutoff", ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
+                            dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks,
+                            mass_ini=mass_ini, ymax=30000)
+            
     else:                                   #for the components that were not added
-        fabfunctions.plot_timeseries(df_waterpfasmass_aggr[comp], outdir_plot_water, 
+        fabfunctions.plot_timeseries(df_water_pfasmass_aggr[comp], outdir_plot_water, 
                     fname=figname, ylab=f"Mass {comp} ({unit_water_NGAC[:2]})",  #assuming volume to be in [l]
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
 
@@ -827,13 +896,14 @@ for comp in compounds_select:
             raise ValueError('Sampling dates and dates according to pivot are not identical.')
 
 
-#Plot interpolated water mass at each ROUND start: four round bars per soil type (first attempt of integrated figure).
+#Plot interpolated water mass at each ROUND start (not used for report, as we prefer to show initial mass): 
+# four round bars per soil type (first attempt of integrated figure).
 round_colors = dict(zip(dates_round_plants['roundnr'], sns.color_palette('tab10', len(dates_round_plants))))
 for comp in compounds_select:
-    if comp not in df_waterpfasmass_aggr or comp not in df_sunfl_pfasmass_aggr:
+    if comp not in df_water_pfasmass_aggr or comp not in df_sunfl_pfasmass_aggr:
         continue
 
-    df_watermass_by_date = df_waterpfasmass_aggr[comp]
+    df_watermass_by_date = df_water_pfasmass_aggr[comp]
     df_watermass_by_round = pd.DataFrame()
     for roundnr in dates_round_plants['roundnr']:
         round_dates = dates_round_plants.loc[
@@ -1001,7 +1071,7 @@ for rnd in  Rounds_soil_sampled:
 #%% Make aggregated plots with water and plant data combined
 #============================================================================= 
 
-#The total plant mass uptake and efficiency per YEAR
+#The total plant mass uptake [+ the ratio of uptake in plant, soil and water] and efficiency per YEAR
 for year in [2025, 2026]:
     if year == 2025:
         Soiltypes = Soiltypes2025
@@ -1010,6 +1080,12 @@ for year in [2025, 2026]:
         Soiltypes = Soiltypes2026
         df_pfas_ini = df_pfas_ini_2026
 
+    df_sunfl_biomass_year = (
+        pd.concat([df_sunfl_biomass_by_round[rnd] for rnd in rounds_by_year_aggr[year]])
+        .groupby(level=0)
+        .sum(min_count=1)
+        .reindex(index=Soiltypes, columns=tissue_names)
+    )
     df_sunfl_pfasmass_year = pd.DataFrame(
         index=Soiltypes,
         columns=df_pfas_ini.index,
@@ -1020,6 +1096,19 @@ for year in [2025, 2026]:
         columns=df_pfas_ini.index,
         dtype=float,
     )
+    
+    df_perc_water_pfasmass_year = pd.DataFrame(
+            index=Soiltypes,
+            columns=df_pfas_ini.index,
+            dtype=float,
+        )
+
+    df_perc_soil_pfasmass_year = pd.DataFrame(
+                index=Soiltypes,
+                columns=df_pfas_ini.index,
+                dtype=float,
+            )
+    
     for soiltype in Soiltypes:
         for comp in list(df_pfas_ini.index):            
             df_sunfl_pfasmass_year.loc[soiltype, comp] = (
@@ -1033,10 +1122,52 @@ for year in [2025, 2026]:
                 * 100
             )
 
+            #The total water mass in water according to last 3 observations (to smooth out fluctuations) 
+            # as perecentage from initial mass per year
+            water_mass = df_water_pfasmass_aggr[comp]
+            if year == 2025:
+                round3 = dates_round_plants.loc[
+                    dates_round_plants['roundnr'] == 3
+                ].iloc[0]
+                dates = water_mass.index.normalize()
+                mask = (dates >= round3['start']) & (dates <= round3['end'])
+            elif year == 2026:
+                round4 = dates_round_plants.loc[
+                                    dates_round_plants['roundnr'] == 4
+                                ].iloc[0]
+                dates = water_mass.index.normalize()
+                mask = (dates >= round4['start']) 
+                        
+            df_perc_water_pfasmass_year.loc[soiltype, comp] = (
+                water_mass.loc[mask, soiltype]
+                .sort_index()
+                .dropna()
+                .tail(3)
+                .mean()
+                / df_pfas_ini.loc[comp, soiltype]
+                * 100
+            )
+            
+            df_perc_soil_pfasmass_year.loc[soiltype, comp] = (
+                            (df_pfas_ini.loc[comp, soiltype]
+                            - water_mass.loc[mask, soiltype]
+                                                        .sort_index()
+                                                        .dropna()
+                                                        .tail(3)
+                                                        .mean()
+                                                        -df_sunfl_pfasmass_year.loc[soiltype, comp])
+                                / df_pfas_ini.loc[comp, soiltype] 
+                                * 100
+                            )
+
     if year== 2025:
+        df_sunfl_biomass_year = df_sunfl_biomass_year.rename(index={'Activated Carbon': 'AC'})
         df_sunfl_pfasmass_year = df_sunfl_pfasmass_year.rename(index={'Activated Carbon': 'AC'})
         df_efficiency_ini_year = df_efficiency_ini_year.rename(index={'Activated Carbon': 'AC'})
+        df_perc_water_pfasmass_year = df_perc_water_pfasmass_year.rename(index={'Activated Carbon': 'AC'})
+        df_perc_soil_pfasmass_year = df_perc_soil_pfasmass_year.rename(index={'Activated Carbon': 'AC'})
 
+    
     plot_compounds = [
         comp for comp in compounds_select
         if comp in df_sunfl_pfasmass_year.columns
@@ -1047,6 +1178,7 @@ for year in [2025, 2026]:
     df_efficiency_ini_year = df_efficiency_ini_year.reindex(
         columns=plot_compounds
     )
+    #use specific colors per PFAS group
     compound_palette = (
         list(sns.color_palette('Blues', 5))
         + list(sns.color_palette('Greens', 5))
@@ -1059,11 +1191,21 @@ for year in [2025, 2026]:
     }
 
     fabfunctions.plot_bar_stacked(
+        df_sunfl_biomass_year,
+        outdir_plot_combine,
+        f"Biomass_sunfl_by_soiltypes_{year}.png",
+        color_stacks=bar_colors,
+        xlab='',
+        ylab=f"Sunflower biomass (g dry weight) in {year}",
+        stacked=True,
+    )
+
+    fabfunctions.plot_bar_stacked(
         df_sunfl_pfasmass_year,
         outdir_plot_combine,
         f"Mass_uptake_sunfl_by_soiltypes_{year}.png",
         color_stacks=compound_colors,
-        xlab='Soil type',
+        xlab='',
         ylab=f"Mass in sunflower ({unit_plant_NGAC[:2]}) in {year}",
         stacked=False,
     )
@@ -1073,7 +1215,7 @@ for year in [2025, 2026]:
         outdir_plot_combine,
         f"Mass_uptake_sunfl_by_soiltypes_cutoff_{year}.png",
         color_stacks=compound_colors,
-        xlab='Soil type',
+        xlab='',
         ymax=5000,
         ylab=f"Mass in sunflower ({unit_plant_NGAC[:2]}) in {year}",
         stacked=False,
@@ -1084,9 +1226,28 @@ for year in [2025, 2026]:
         outdir_plot_combine,
         f"Efficiency_ini_sunfl_all_soiltypes_{year}.png",
         color_stacks=compound_colors,
-        xlab='Soil type',
+        xlab='',
         ylab=f"Efficiency sunflower (%) in {year}",
         stacked=False,
+    )
+
+    # Show the estimated soil remainder as zero if measured plant and water exceed 100%.
+    percentage_stacks = {
+        'Sunflower': df_efficiency_ini_year,
+        'Water': df_perc_water_pfasmass_year.reindex(
+            index=df_efficiency_ini_year.index, columns=plot_compounds
+        ).clip(upper=100), #higher than 100% not realistic, and can occur due to measurement errors
+        'Soil (estimated)': df_perc_soil_pfasmass_year.reindex(
+            index=df_efficiency_ini_year.index, columns=plot_compounds
+        ).clip(lower=0), #lower than 0 not realistic
+    }
+    fabfunctions.plot_bar_grouped_stacked(
+        percentage_stacks,
+        outdir_plot_combine,
+        f"PFAS_distribution_by_soiltype_{year}.png",
+        color_groups=compound_colors,
+        xlab='Soil type',
+        ylab=f"Distribution PFAS mass after {year} (%)",
     )
 
     

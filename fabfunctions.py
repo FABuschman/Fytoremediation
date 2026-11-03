@@ -2,6 +2,8 @@ import os
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from matplotlib.patches import Patch
+import numpy as np
 import pandas as pd
 import seaborn as sns
 
@@ -27,7 +29,8 @@ def make_data_table(file, sheets: list, cols: list) -> pd.DataFrame:
 
 
 def plot_timeseries(df, path, fname, cmap='tab20', 
-                    xlab='', ylab ='', title='', dates_round_plants=None, datesfilltanks=None, mass_ini=None):
+                    xlab='', ylab ='', title='', ymax=None,
+                    dates_round_plants=None, datesfilltanks=None, mass_ini=None):
     """
     Creates a timeseries plot of data and saves it as a PNG file.
     Contaminant is plotted on the y-axis and time plotted on the x-axis. 
@@ -98,8 +101,11 @@ def plot_timeseries(df, path, fname, cmap='tab20',
      #       color='#999999', linestyle='-', alpha=0.3)
     
     # set axis limits
-    ax.set_ylim(0, )
-
+    if ymax == None:
+        ax.set_ylim(0, )
+    else:
+        ax.set_ylim(0, ymax)
+    
     # # Title
     # ax.set_title(title)
 
@@ -145,8 +151,8 @@ def plot_bar_stacked(df_bar, path, fname, color_stacks , xlab='', ylab ='', ymax
     # make legend
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(
-        handles[::-1],
-        labels[::-1],
+        handles,
+        labels,
         loc='upper left',
         bbox_to_anchor=(1.02, 1),
         borderaxespad=0,
@@ -156,6 +162,64 @@ def plot_bar_stacked(df_bar, path, fname, color_stacks , xlab='', ylab ='', ymax
     
     plt.close(fig)
     
+
+def plot_bar_grouped_stacked(data, path, fname, color_groups, xlab='', ylab=''):
+    """Plot one stacked bar per column, grouped by the DataFrame index."""
+    if not data:
+        raise ValueError("At least one stack is required")
+    frames = list(data.values())
+    if frames[0].empty:
+        raise ValueError("The provided data is empty")
+    if any(not frame.index.equals(frames[0].index)
+           or not frame.columns.equals(frames[0].columns) for frame in frames[1:]):
+        raise ValueError("All stacks must have the same index and columns")
+
+    soils = frames[0].index
+    compounds = frames[0].columns
+    hatches = ('//', '', '..')
+    if len(data) > len(hatches):
+        raise ValueError("Not enough hatch patterns for the requested stacks")
+    x = np.arange(len(soils))
+    width = 0.8 / len(compounds)
+    fig, ax = plt.subplots(figsize=(max(8, len(soils) * 1.5), 5.27),
+                           constrained_layout=True, dpi=300)
+
+    for i, compound in enumerate(compounds):
+        positions = x - 0.4 + (i + 0.5) * width
+        values = np.column_stack([frame[compound].to_numpy(dtype=float) for frame in frames])
+        available = np.isfinite(values).all(axis=1)
+        positive_bottom = np.zeros(len(soils))
+        negative_bottom = np.zeros(len(soils))
+        for stack_index, (stack_name, _) in enumerate(data.items()):
+            heights = values[:, stack_index]
+            bottom = np.where(heights >= 0, positive_bottom, negative_bottom)
+            ax.bar(positions[available], heights[available], width,
+                   bottom=bottom[available], color=color_groups[compound],
+                   hatch=hatches[stack_index], edgecolor='black', linewidth=0.4)
+            positive_bottom += np.where(available & (heights > 0), heights, 0)
+            negative_bottom += np.where(available & (heights < 0), heights, 0)
+        for position in positions[~available]:
+            ax.text(position, 0, 'n/a', rotation=90, ha='center', va='bottom', fontsize=6)
+
+    ax.axhline(100, color='black', linestyle='--', linewidth=0.8)
+    ax.set_xticks(x, soils, rotation=90)
+    ax.set(xlabel=xlab, ylabel=ylab)
+    #lower, upper = ax.get_ylim()
+    ax.set_ylim(0,100)
+
+    compound_legend = ax.legend(
+        handles=[Patch(facecolor=color_groups[compound], label=compound) for compound in compounds],
+        loc='upper left', bbox_to_anchor=(1.02, 1),
+    )
+    ax.add_artist(compound_legend)
+    ax.legend(
+        handles=[Patch(facecolor='white', edgecolor='black', hatch=hatch, label=name)
+                 for name, hatch in zip(data, hatches)],
+       loc='lower left', bbox_to_anchor=(1.02, 0),
+    )
+    plt.savefig(os.path.join(path, fname), bbox_inches='tight', dpi=300)
+    plt.close(fig)
+
 
 def plot_heat_map(df_heat, path, fname, color_map , title_heat='', ylab ='', vmax=None, annotation=None):
     """
