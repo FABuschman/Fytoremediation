@@ -272,7 +272,24 @@ for sub, lod in lod.items():
     df_pivot =df.pivot(index=['Date'],
                        columns= ['soil type'],
                        values=sub).replace("n.a.", np.nan)
-                
+
+    if not df_pivot.empty: #add nan in between rounds 3 and 4
+                round3_end = dates_round_plants.loc[
+                    dates_round_plants['roundnr'].eq(3), 'end'
+                ].iloc[0]
+                round4_start = dates_round_plants.loc[
+                    dates_round_plants['roundnr'].eq(4), 'start'
+                ].iloc[0]
+                round_break = round3_end + (round4_start - round3_end) / 2
+                df_pivot = pd.concat([
+                    df_pivot,
+                    pd.DataFrame(
+                        np.nan,
+                        index=pd.DatetimeIndex([round_break]),
+                        columns=df_pivot.columns,
+                    ),
+                ]).sort_index()
+
     ### plot concentration   #first and second argument need to given, others are matched by defined name
     df_pivot_plot=df_pivot.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
     

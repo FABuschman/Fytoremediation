@@ -177,7 +177,7 @@ df_meta_allrounds=df_meta_allrounds.join(weight_allrounds, how='left') #join (no
 
 #obtain dry factor: 1) use OVEN measured dry and wet weight per sample 2) fill in other values with table Dry_factor_kasDelft.csv (based on Round 3, when most )
 
-# Calculate dry factors from the measured dry/wet weight ratio when available.
+# Calculate dry factors from the measured dry/wet weight ratio when available (only to calculate dry weight!, not for other purposes).
 df_meta_allrounds['dry factor'] = np.nan
 measured_weights = (
     df_meta_allrounds['dry weight Delta-lab (g) '].notna()
@@ -350,7 +350,7 @@ wet_mass_plants_tot= df_plant_agro['tot wet weight']
 df_numeric = wet_mass_plants_tot.apply(pd.to_numeric, errors='coerce')
 df_numeric.sum()
 
-unit_plant_NGAC = "\u03bcg/kg"
+unit_plant_NGAC = "\u03bcg/kg" #this is as we delivered, can be /kg wet weight or /kg dry weight
 
 df_sunfl_pfasmass_aggr = {} #only aggregate for sunflower
 df_sunfl_biomass_by_round = {}
@@ -832,8 +832,9 @@ for comp in compounds_select:
         ).mul(df_pivot_plot)
                 
         figname = f"Water_mass_ {comp}"  #.replace(':','_')
+
         water_mass_plot = df_water_pfasmass_aggr[comp].copy()
-        if not water_mass_plot.empty:
+        if not water_mass_plot.empty:  #add nan in between rounds 3 and 4
             round3_end = dates_round_plants.loc[
                 dates_round_plants['roundnr'].eq(3), 'end'
             ].iloc[0]
