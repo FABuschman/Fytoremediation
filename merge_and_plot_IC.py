@@ -273,7 +273,8 @@ for sub, lod in lod.items():
                        columns= ['soil type'],
                        values=sub).replace("n.a.", np.nan)
 
-    if not df_pivot.empty: #add nan in between rounds 3 and 4
+    df_pivot_plot=df_pivot.copy()
+    if not df_pivot_plot.empty: #add nan in between rounds 3 and 4
                 round3_end = dates_round_plants.loc[
                     dates_round_plants['roundnr'].eq(3), 'end'
                 ].iloc[0]
@@ -281,24 +282,24 @@ for sub, lod in lod.items():
                     dates_round_plants['roundnr'].eq(4), 'start'
                 ].iloc[0]
                 round_break = round3_end + (round4_start - round3_end) / 2
-                df_pivot = pd.concat([
-                    df_pivot,
+                df_pivot_plot = pd.concat([
+                    df_pivot_plot,
                     pd.DataFrame(
                         np.nan,
                         index=pd.DatetimeIndex([round_break]),
-                        columns=df_pivot.columns,
+                        columns=df_pivot_plot.columns,
                     ),
                 ]).sort_index()
 
     ### plot concentration   #first and second argument need to given, others are matched by defined name
-    df_pivot_plot=df_pivot.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
+    df_pivot_plot=df_pivot_plot.reindex(soiltypes_goodorder, axis="columns") #Activated carbon is often first, change to order in greenhouse
     
     fabfunctions.plot_timeseries(df_pivot_plot, outdir_plot,
                     fname= f"Concentration {sub}", ylab=f"Concentration {sub} ({unitDeltalab})", 
                     dates_round_plants=dates_round_plants, datesfilltanks=datesfilltanks)
                         #cmap='tab20',  xlab ='', title=sub,
     
-    # Align dates and soil types explicitly before converting concentrations to mass.
+    # Multiply volume (without nan in between r3 and r4) with concentration (with nan in between r3 and r4) to get mass. 
     df_mass_plot = df_vol_wetsoil_onsampling.reindex(
                 index=df_pivot_plot.index, columns=df_pivot_plot.columns
             ).mul(df_pivot_plot)
